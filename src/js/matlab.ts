@@ -385,7 +385,9 @@ export class Matrix {
     public readonly cols: number;
     public readonly height: number;
     public readonly width: number;
-    public readonly dataType: DataType; 
+    public readonly dataType: DataType;
+
+    public readonly isScalar: boolean;
    
     public readonly color: string;
 
@@ -399,6 +401,8 @@ export class Matrix {
         this.width = cols;
         this.data = data;
         this.dataType = dataType;
+
+        this.isScalar = rows === 1 && cols === 1;
         // this.history = history || MatrixHistory.Raw.instance(this);
 
         this.color = Color.toColor([this.rows, this.height, this.data], "6789ABCDEF");
@@ -410,106 +414,91 @@ export class Matrix {
 
     public clone() : Matrix {
         // Note the .slice() copies the data array
-        return new Matrix(this.rows, this.cols, this.data.slice(), this.dataType_var);
+        return new Matrix(this.rows, this.cols, this.data.slice(), this.dataType);
     }
     
-    rawIndex : function(row, col) {
+    public linearIndex(row: number, col: number) {
         row = row - 1;
         col = col - 1;
         return col * this.rows + row + 1;
-    },
-    rawIndex0 : function(row, col) {
-        return col * this.rows + row;
-    },
-    at : function(row, col) {
-        row = row - 1;
-        col = col - 1;
-        return this.data[col * this.rows + row]
-    },
-    at0 : function(row, col){
-        return this.data[col * this.rows + row]
-    },
-    setAt : function(row, col, scalar) {
-        row = row - 1;
-        col = col - 1;
-        this.data[col * this.rows + row] = scalar;
-    },
-    setAt0 : function(row, col, scalar){
-        this.data[col * this.rows + row] = scalar;
-    },
-    getRaw : function (index) {
+    }
+
+    public atLinear(index: number) {
         return this.data[index - 1];
-    },
-    getRaw0 : function (index) {
-        return this.data[index];
-    },
-    setRaw : function (index, scalar) {
-        this.data[index - 1] = scalar;
-    },
-    setRaw0 : function(index, scalar) {
-        this.data[index] = scalar;
-    },
-    length : function(dimension) {
-        if (!dimension){ // either dimension not provided or is 0
+    }
+
+    public setLinear(index: number, value: number) {
+        this.data[index - 1] = value;
+    }
+
+    public at(row: number, col: number) {
+        row = row - 1;
+        col = col - 1;
+        return this.data[col * this.rows + row]
+    }
+
+    public setAt(row: number, col: number, value: number) {
+        row = row - 1;
+        col = col - 1;
+        this.data[col * this.rows + row] = value;
+    }
+
+    // TODO: This function seems confusing. Perhaps there's a better way.
+    public length(dimension: 0 | 1 | 2 = 0) {
+        if (dimension === 0){ // either dimension not provided or is 0
             return this.rows * this.cols;
         }
         else if (dimension === 1) {
             return this.rows;
         }
-        else if (dimension === 2) {
+        else{ // if (dimension === 2) {
             return this.cols;
         }
-        else{
-            assert(false, "Arrays with dimension > 2 not yet supported.");
-        }
-    },
-    isScalar : function() {
-        return this.numRows() === 1 && this.numCols() === 1;
-    },
-    scalarValue : function() {
-        return this.data[0];
-    },
-    matrixValue : function() {
-        return this;
-    },
-    contains : function(value) {
-        return this.data.contains(value);
-    },
-    visualize_html : function(dest) {
-//            if (this.history){
-//                this.history.visualize_html(dest);
-//                return;
-//            }
+    }
 
-        var table = $("<table></table>");
+    public scalarValue() {
+        return this.data[0];
+    }
+
+    // matrixValue : function() {
+    //     return this;
+    // },
+
+    public contains(value: number) : boolean {
+        return this.data.indexOf(value) !== -1;
+    }
+
+    public visualize_html(containingElem: JQuery) {
+
+        let table = $("<table></table>");
         table.addClass("matlab-table");
 
         // Logical arrays are black/white
-        if (this.dataType_var !== "logical") {
+        if (this.dataType !== "logical") {
             table.css("background-color", this.color);
         }
-        for (var r = 1; r <= this.numRows(); ++r) {
-            var tr = $("<tr></tr>");
+        for (let r = 1; r <= this.rows; ++r) {
+            let tr = $("<tr></tr>");
             table.append(tr);
-            for (var c = 1; c <= this.numCols(); ++c) {
-                var td = $("<td></td>");
-                var temp = $("<div></div>");
+            for (let c = 1; c <= this.cols; ++c) {
+                let td = $("<td></td>");
+                let temp = $("<div></div>");
                 temp.addClass("matlab-scalar");
-                if (this.dataType_var === "logical"){
+                if (this.dataType === "logical"){
                     td.addClass(this.at(r,c) ? "logical-1" : "logical-0");
                 }
-                var tempSpan = $("<span></span>");
-                tempSpan.html(this.at(r,c));
+                let tempSpan = $("<span></span>");
+                tempSpan.html(this.at(r,c).toString());
                 temp.append(tempSpan);
-                td.html(temp);
+                td.append(temp);
                 tr.append(td);
             }
         }
 
-        dest.append(table);
+        containingElem.append(table);
     }
 
-});
+}
 
 var MatrixIndex = Class.extend({
     _name: "MatrixIndex",
