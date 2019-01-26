@@ -1,206 +1,263 @@
-function random_color() {
-    // http://stackoverflow.com/questions/1484506/random-color-generator-in-javascript
-    var letters = '6789ABCDEF';
-    var color = '#';
-    for (var i = 0; i < 6; i++ ) {
-        color += letters[Math.floor(Math.random() * 10)];
+
+export namespace MatlabMath {
+
+    // the initial seed
+    let seed = 0;
+
+    export function random(min: number = 0, max: number = 1) {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seededRandom(seed, min, max);
+    };
+
+    export function seededRandom(seed: number, min: number = 0, max: number = 1) {
+        var rnd = seed / 233280;
+    
+        rnd = min + rnd * (max - min);
+        rnd = Math.max(min, Math.min(max, rnd));
+        return rnd;
     }
-    return color;
+
 }
 
-var MatrixHistory = Class.extend({
-    _name: "MatrixHistory",
+export namespace Color {
 
-    init : function () {
-        this.color = toColor(this, "6789ABCDEF");
-    },
+    export function toColor(obj: {toString(): string}, letters: string = "123456789ABCDEF") {
 
-    visualize_html : Class._ABSTRACT
-});
-
-MatrixHistory.AppendRows = MatrixHistory.extend({
-    _name: "MatrixHistory.AppendRows",
-
-    init : function(rows) {
-        this.initParent();
-        this.rows = rows;
-    },
-
-    visualize_html : function(dest) {
-        var table = $("<table></table>");
-        table.addClass("matlab-table");
-        table.css("background-color", this.color);
-
-        var rows = this.rows;
-        for (var i = 0; i < rows.length; ++i) {
-            var tr = $("<tr></tr>");
-            table.append(tr);
-            var td = $("<td></td>");
-            tr.append(td);
-            rows[i].visualize_html(td);
-        }
-        dest.append(table);
+        // Generate a hash for the object. First toString, then hash the string.
+        // String hash based on https://stackoverflow.com/questions/7616461/generate-a-hash-from-string-in-javascript
+        var str = obj.toString();
+        for (var i = 0, hash = 0; i < str.length; hash = str.charCodeAt(i++) + ((hash << 5) - hash));
+    
+        // use hash as seed for RNG
+        return seededRandomColor(Math.abs(hash), letters);
     }
-});
-
-MatrixHistory.AppendCols = MatrixHistory.extend({
-    _name: "MatrixHistory.AppendCols",
-
-    init : function(cols) {
-        this.initParent();
-        this.cols = cols;
-    },
-
-    visualize_html : function(dest) {
-        var cols = this.cols;
-        if (cols.length == 1) {
-            // Single element row - just visualize the element, not as a row
-            cols[0].visualize_html(dest);
+    
+    function seededRandomColor(seed: number, letters: string = "123456789ABCDEF") {
+    
+        // http://stackoverflow.com/questions/1484506/random-color-generator-in-javascript
+        letters = letters || "0123456789ABCDEF";
+        var color = '#';
+        for (var i = 0; i < 6; i++ ) {
+            color += letters[Math.floor(MatlabMath.seededRandom(seed) * letters.length)];
         }
-        else {
-            var table = $("<table></table>");
-            table.addClass("matlab-table");
-            table.css("background-color", this.color);
-            var tr = $("<tr></tr>");
-            table.append(tr);
-
-            for (var i = 0; i < cols.length; ++i) {
-                var td = $("<td></td>");
-                tr.append(td);
-
-                if(cols[i].isScalar()){
-                    td.html(cols[i].scalarValue());
-                }
-                else{
-                    cols[i].visualize_html(td);
-                }
-            }
-            dest.append(table);
-        }
+        return color;
     }
-});
-
-// TODO: make this meaningfully different from AppendCols
-MatrixHistory.Range = MatrixHistory.extend({
-    _name: "MatrixHistory.Range",
-
-    init : function(range) {
-        this.initParent();
-        this.range = range;
-    },
-
-    visualize_html : function(dest) {
-        var range = this.range;
-        var table = $("<table></table>");
-        table.append('<svg><defs><marker id="arrow" markerWidth="10" markerHeight="10" refx="9" refy="3" orient="auto" markerUnits="strokeWidth"> <path d="M0,0 L0,6 L9,3 z" fill="#000" /> </marker> </defs><g transform="translate(-10,0)"><line x1="22" y1="25" x2="100%" y2="25" stroke="#000" stroke-width="1" marker-end="url(#arrow)" /></g> </svg>');
-
-        table.addClass("matlab-range");
-        table.css("background-color", this.color);
-        var tr = $("<tr></tr>");
-        table.append(tr);
-
-        for (var i = 0; i < range.length; ++i) {
-            var td = $("<td></td>");
-            tr.append(td);
-
-            // NOTE: The numbers themselves in a range are calculated and thus
-            //       have a history, although in the future it may be useful to
-            //       somehow show the history of the start, step, and end.
-//                    range[i].visualize_html(td);
-            var temp = $("<div></div>");
-            temp.addClass("matlab-scalar");
-            var tempSpan = $("<span></span>");
-            var num = Matrix.formatNumber(range[i]);
-            if (num.length > 3) {
-                temp.addClass("double");
-            }
-            tempSpan.html(num);
-            temp.append(tempSpan);
-            td.append(temp);
+    
+    export function randomColor(letters: string = "123456789ABCDEF") {
+    
+        // http://stackoverflow.com/questions/1484506/random-color-generator-in-javascript
+        letters = letters || "0123456789ABCDEF";
+        var color = '#';
+        for (var i = 0; i < 6; i++ ) {
+            color += letters[Math.floor(MatlabMath.random() * letters.length)];
         }
-        dest.append(table);
+        return color;
     }
-});
+}
 
-MatrixHistory.Scalar = MatrixHistory.extend({
-    _name: "MatrixHistory.Scalar",
 
-    init : function(value) {
-        this.initParent();
-        this.value = value;
-    },
 
-    visualize_html : function(dest) {
-        var temp = $("<div></div>");
-        temp.addClass("matlab-scalar");
-        var tempSpan = $("<span></span>");
-        var num = Matrix.formatNumber(this.value);
-        if (num.length > 3) {
-            temp.addClass("double");
-        }
-        tempSpan.html(num);
-        temp.append(tempSpan);
-        dest.append(temp);
-    }
-});
+interface Visualizable {
+    visualize_html(containingElem: JQuery) : void
+}
 
-MatrixHistory.Raw = MatrixHistory.extend({
-    _name: "MatrixHistory.Raw",
+type DataType = "int" | "double" | "logical";
 
-    init : function(matrix) {
-        this.initParent();
-        this.matrix = matrix;
-    },
+export abstract class MatrixHistory implements Visualizable {
 
-    visualize_html : function(dest) {
-        var table = $("<table></table>");
-        table.addClass("matlab-table");
-        table.css("background-color", this.color);
-        for (var r = 1; r <= this.matrix.numRows(); ++r) {
-            var tr = $("<tr></tr>");
-            table.append(tr);
-            for (var c = 1; c <= this.matrix.numCols(); ++c) {
-                var td = $("<td></td>");
-                var temp = $("<div></div>");
-                temp.addClass("matlab-scalar");
-                var tempSpan = $("<span></span>");
-                tempSpan.html(this.matrix.at(r,c));
-                temp.append(tempSpan);
-                td.html(temp);
-                tr.append(td);
-            }
+    public readonly color = Color.randomColor();
 
-        }
+    public abstract visualize_html(containingElem: JQuery) : void;
+}
 
-        dest.append(table);
-    }
-});
+// class AppendRows extends MatrixHistory {
+    
+//     public readonly rows: Visualizable[];
 
-MatrixHistory.MatrixIndex = MatrixHistory.extend({
-    _name: "MatrixHistory.MatrixIndex",
+//     public constructor(rows : Visualizable[]) {
+//         super();
+//         this.rows = rows;
+//     }
 
-    init : function(matrixIndex) {
-        this.initParent();
+//     public visualize_html(containingElem: JQuery) {
+//         let table = $("<table></table>");
+//         table.addClass("matlab-table");
+//         table.css("background-color", this.color);
+
+//         let rows = this.rows;
+//         for (let i = 0; i < rows.length; ++i) {
+//             let tr = $("<tr></tr>");
+//             let td = $("<td></td>");
+//             table.append(tr);
+//             tr.append(td);
+//             rows[i].visualize_html(td);
+//         }
+//         containingElem.append(table);
+//     }
+// }
+
+// class AppendCols extends MatrixHistory {
+    
+//     public readonly cols: Visualizable[];
+
+//     public constructor(cols : Visualizable[]) {
+//         super();
+//         this.cols = cols;
+//     }
+
+//     public visualize_html(containingElem: JQuery) {
+//         let cols = this.cols;
+//         if (cols.length == 1) {
+//             // Single element row - just visualize the element, not as a row
+//             cols[0].visualize_html(containingElem);
+//         }
+//         else {
+//             let table = $("<table></table>");
+//             table.addClass("matlab-table");
+//             table.css("background-color", this.color);
+//             let tr = $("<tr></tr>");
+//             table.append(tr);
+
+//             for (let i = 0; i < cols.length; ++i) {
+//                 let td = $("<td></td>");
+//                 tr.append(td);
+
+//                 if(cols[i].isScalar()){
+//                     td.html(cols[i].scalarValue());
+//                 }
+//                 else{
+//                     cols[i].visualize_html(td);
+//                 }
+//             }
+//             dest.append(table);
+//         }
+//     }
+// });
+
+
+// MatrixHistory.Range = MatrixHistory.extend({
+//     _name: "MatrixHistory.Range",
+
+//     init : function(range) {
+//         this.initParent();
+//         this.range = range;
+//     },
+
+//     visualize_html : function(dest) {
+//         var range = this.range;
+//         var table = $("<table></table>");
+//         table.append('<svg><defs><marker id="arrow" markerWidth="10" markerHeight="10" refx="9" refy="3" orient="auto" markerUnits="strokeWidth"> <path d="M0,0 L0,6 L9,3 z" fill="#000" /> </marker> </defs><g transform="translate(-10,0)"><line x1="22" y1="25" x2="100%" y2="25" stroke="#000" stroke-width="1" marker-end="url(#arrow)" /></g> </svg>');
+
+//         table.addClass("matlab-range");
+//         table.css("background-color", this.color);
+//         var tr = $("<tr></tr>");
+//         table.append(tr);
+
+//         for (var i = 0; i < range.length; ++i) {
+//             var td = $("<td></td>");
+//             tr.append(td);
+
+//             // NOTE: The numbers themselves in a range are calculated and thus
+//             //       have a history, although in the future it may be useful to
+//             //       somehow show the history of the start, step, and end.
+// //                    range[i].visualize_html(td);
+//             var temp = $("<div></div>");
+//             temp.addClass("matlab-scalar");
+//             var tempSpan = $("<span></span>");
+//             var num = Matrix.formatNumber(range[i]);
+//             if (num.length > 3) {
+//                 temp.addClass("double");
+//             }
+//             tempSpan.html(num);
+//             temp.append(tempSpan);
+//             td.append(temp);
+//         }
+//         dest.append(table);
+//     }
+// });
+
+// MatrixHistory.Scalar = MatrixHistory.extend({
+//     _name: "MatrixHistory.Scalar",
+
+//     init : function(value) {
+//         this.initParent();
+//         this.value = value;
+//     },
+
+//     visualize_html : function(dest) {
+//         var temp = $("<div></div>");
+//         temp.addClass("matlab-scalar");
+//         var tempSpan = $("<span></span>");
+//         var num = Matrix.formatNumber(this.value);
+//         if (num.length > 3) {
+//             temp.addClass("double");
+//         }
+//         tempSpan.html(num);
+//         temp.append(tempSpan);
+//         dest.append(temp);
+//     }
+// });
+
+// MatrixHistory.Raw = MatrixHistory.extend({
+//     _name: "MatrixHistory.Raw",
+
+//     init : function(matrix) {
+//         this.initParent();
+//         this.matrix = matrix;
+//     },
+
+//     visualize_html : function(dest) {
+//         var table = $("<table></table>");
+//         table.addClass("matlab-table");
+//         table.css("background-color", this.color);
+//         for (var r = 1; r <= this.matrix.numRows(); ++r) {
+//             var tr = $("<tr></tr>");
+//             table.append(tr);
+//             for (var c = 1; c <= this.matrix.numCols(); ++c) {
+//                 var td = $("<td></td>");
+//                 var temp = $("<div></div>");
+//                 temp.addClass("matlab-scalar");
+//                 var tempSpan = $("<span></span>");
+//                 tempSpan.html(this.matrix.at(r,c));
+//                 temp.append(tempSpan);
+//                 td.html(temp);
+//                 tr.append(td);
+//             }
+
+//         }
+
+//         dest.append(table);
+//     }
+// });
+
+export class MatrixIndexHistory extends MatrixHistory {
+
+    private readonly matrixIndex: MatrixIndex;
+    private readonly originalMatrix: Matrix;
+
+    public constructor function(matrixIndex: MatrixIndex) {
+        super();
         this.matrixIndex = matrixIndex;
         this.originalMatrix = this.matrixIndex.source().clone();
-    },
+    }
 
-    visualize_html : function(dest) {
-        var source = this.matrixIndex.source();
-        var table = $("<table></table>");
+    public visualize_html(containingElem: JQuery) {
+        let source = this.matrixIndex.source();
+        let table = $("<table></table>");
         table.addClass("matlab-index");
         table.css("background-color", this.color);
-        for (var r = 1; r <= source.numRows(); ++r) {
-            var tr = $("<tr></tr>");
+
+        for (let r = 1; r <= source.numRows(); ++r) {
+            let tr = $("<tr></tr>");
             table.append(tr);
-            for (var c = 1; c <= source.numCols(); ++c) {
-                var td = $("<td><div class='highlight'></div></td>");
+            for (let c = 1; c <= source.numCols(); ++c) {
+                let td = $("<td><div class='highlight'></div></td>");
                 if (this.matrixIndex.isSelected(r, c)){
                     td.addClass("selected");
                 }
-                var temp = $("<div></div>");
+                let temp = $("<div></div>");
                 temp.addClass("matlab-scalar");
-                var tempSpan = $("<span></span>");
+                let tempSpan = $("<span></span>");
                 tempSpan.html(this.originalMatrix.at(r,c));
                 temp.append(tempSpan);
                 td.append(temp);
@@ -209,28 +266,29 @@ MatrixHistory.MatrixIndex = MatrixHistory.extend({
 
         }
 
-        dest.append(table);
+        containingElem.append(table);
     }
-});
+}
 
 
 
-var Matrix = Class.extend({
-    _name: "Matrix",
+export class Matrix {
 
     //Static functions
-    formatNumber : function(num) {
+    // TODO: Should this really be a static function of matrix?
+    public static formatNumber(num: number) {
         if (Math.trunc(num) == num){
             return num.toString();
         }
         else{
             return num.toPrecision(2);
         }
-    },
-    append_cols : function(mats) {
+    }
+
+    public append_cols(mats: Matrix[]) {
         mats = mats.map(function(m){return m.matrixValue()});
         var rows = mats[0].rows;
-        return Matrix.instance(
+        return new Matrix(
             mats[0].rows,
             mats.reduce(function(prev, current){
                 return prev + current.cols;
@@ -242,117 +300,119 @@ var Matrix = Class.extend({
                 newData.pushAll(mat.data);
                 return newData;
             }, []),
-            mats[0].dataType(),
-            MatrixHistory.AppendCols.instance(mats.map(function(mat){
-                return mat.history;
-            }))
+            mats[0].dataType()
+            )
         );
-    },
-    append_rows : function(mats) {
-        mats = mats.map(function(m){return m.matrixValue()});
-        var newCols = [];
-        var cols = mats[0].cols;
-        var newRows = 0;
-        for(var i = 0; i < cols; ++i) {
-            newCols.push([]);
-        }
-        for(var i = 0; i < mats.length; ++i) {
-            var mat = mats[i];
-            newRows += mat.rows;
-            if (mat.cols !== cols) {
-                throw {message: "Mismatched matrix number of columns."};
-            }
-            for(var c = 0; c < cols; ++c) {
-                for(var r = 0; r < mat.rows; ++r) {
-                    newCols[c].push(mat.at(r+1, c+1));
-                }
-            }
-        }
-        var newData = [].concat.apply([], newCols);
-        return Matrix.instance(newRows, cols, newData, mats[0].dataType(),
-            MatrixHistory.AppendRows.instance(mats.map(function(mat){
-                return mat.history;
-            }))
-        );
-    },
-    scalar : function(value, dataType) {
-        return Matrix.instance(1, 1, [value], dataType, MatrixHistory.Scalar.instance(value));
-    },
+    }
+    // append_rows : function(mats) {
+    //     mats = mats.map(function(m){return m.matrixValue()});
+    //     var newCols = [];
+    //     var cols = mats[0].cols;
+    //     var newRows = 0;
+    //     for(var i = 0; i < cols; ++i) {
+    //         newCols.push([]);
+    //     }
+    //     for(var i = 0; i < mats.length; ++i) {
+    //         var mat = mats[i];
+    //         newRows += mat.rows;
+    //         if (mat.cols !== cols) {
+    //             throw {message: "Mismatched matrix number of columns."};
+    //         }
+    //         for(var c = 0; c < cols; ++c) {
+    //             for(var r = 0; r < mat.rows; ++r) {
+    //                 newCols[c].push(mat.at(r+1, c+1));
+    //             }
+    //         }
+    //     }
+    //     var newData = [].concat.apply([], newCols);
+    //     return Matrix.instance(newRows, cols, newData, mats[0].dataType(),
+    //         MatrixHistory.AppendRows.instance(mats.map(function(mat){
+    //             return mat.history;
+    //         }))
+    //     );
+    // },
+    // scalar : function(value, dataType) {
+    //     return Matrix.instance(1, 1, [value], dataType, MatrixHistory.Scalar.instance(value));
+    // },
 
-    // THROWS: on mismatched dimensions
-    binaryOp : function(leftMat, rightMat, operate, dataType) {
-        var newData = [];
-        var numRows;
-        var numCols;
-        if (leftMat.numRows() === rightMat.numRows() && leftMat.numCols() === rightMat.numCols()) {
-            // Same dimensions (also covers both scalars)
-            for (var i = 0; i < leftMat.length(); ++i) {
-                newData.push(operate(leftMat.getRaw0(i), rightMat.getRaw0(i)));
-            }
-            numRows = leftMat.numRows();
-            numCols = leftMat.numCols();
-        }
-        else if (leftMat.isScalar()){
-            var leftScalar = leftMat.scalarValue();
-            for (var i = 0; i < rightMat.length(); ++i) {
-                newData.push(operate(leftScalar, rightMat.getRaw0(i)));
-            }
-            numRows = rightMat.numRows();
-            numCols = rightMat.numCols();
-        }
-        else if (rightMat.isScalar()){
-            var rightScalar = rightMat.scalarValue();
-            for (var i = 0; i < leftMat.length(); ++i) {
-                newData.push(operate(leftMat.getRaw0(i), rightScalar));
-            }
-            numRows = leftMat.numRows();
-            numCols = leftMat.numCols();
-        }
-        else{
-            throw {message: "Mismatched dimensions for operator " + this.op + ". LHS is a " +
-            leftMat.numRows() + "x" + leftMat.numCols() + " and RHS is a " +
-            rightMat.numRows() + "x" + rightMat.numCols() + "."};
-        }
-        return Matrix.instance(numRows, numCols, newData, dataType);
-    },
-    unaryOp : function(mat, operate, dataType) {
-        var newData = [];
-        var numRows = mat.numRows();
-        var numCols = mat.numCols();
-        for (var i = 0; i < mat.length(); ++i) {
-            newData.push(operate(mat.getRaw0(i)));
-        }
-        return Matrix.instance(numRows, numCols, newData, dataType);
-    },
+    // // THROWS: on mismatched dimensions
+    // binaryOp : function(leftMat, rightMat, operate, dataType) {
+    //     var newData = [];
+    //     var numRows;
+    //     var numCols;
+    //     if (leftMat.numRows() === rightMat.numRows() && leftMat.numCols() === rightMat.numCols()) {
+    //         // Same dimensions (also covers both scalars)
+    //         for (var i = 0; i < leftMat.length(); ++i) {
+    //             newData.push(operate(leftMat.getRaw0(i), rightMat.getRaw0(i)));
+    //         }
+    //         numRows = leftMat.numRows();
+    //         numCols = leftMat.numCols();
+    //     }
+    //     else if (leftMat.isScalar()){
+    //         var leftScalar = leftMat.scalarValue();
+    //         for (var i = 0; i < rightMat.length(); ++i) {
+    //             newData.push(operate(leftScalar, rightMat.getRaw0(i)));
+    //         }
+    //         numRows = rightMat.numRows();
+    //         numCols = rightMat.numCols();
+    //     }
+    //     else if (rightMat.isScalar()){
+    //         var rightScalar = rightMat.scalarValue();
+    //         for (var i = 0; i < leftMat.length(); ++i) {
+    //             newData.push(operate(leftMat.getRaw0(i), rightScalar));
+    //         }
+    //         numRows = leftMat.numRows();
+    //         numCols = leftMat.numCols();
+    //     }
+    //     else{
+    //         throw {message: "Mismatched dimensions for operator " + this.op + ". LHS is a " +
+    //         leftMat.numRows() + "x" + leftMat.numCols() + " and RHS is a " +
+    //         rightMat.numRows() + "x" + rightMat.numCols() + "."};
+    //     }
+    //     return Matrix.instance(numRows, numCols, newData, dataType);
+    // },
+    // unaryOp : function(mat, operate, dataType) {
+    //     var newData = [];
+    //     var numRows = mat.numRows();
+    //     var numCols = mat.numCols();
+    //     for (var i = 0; i < mat.length(); ++i) {
+    //         newData.push(operate(mat.getRaw0(i)));
+    //     }
+    //     return Matrix.instance(numRows, numCols, newData, dataType);
+    // },
 
-    //Member functions
-    init : function(rows, cols, data, dataType, history){
+    public readonly rows: number;
+    public readonly cols: number;
+    public readonly height: number;
+    public readonly width: number;
+    public readonly dataType: DataType; 
+   
+    public readonly color: string;
+
+    private readonly data: number[];
+
+    public constructor(rows: number, cols: number, data: number[], dataType: DataType) {
         assert(rows*cols === data.length, "rows: " + rows + "cols: " + cols + " data: " + data.length);
         this.rows = rows;
         this.cols = cols;
         this.height = rows;
         this.width = cols;
         this.data = data;
-        this.dataType_var = dataType;
-        this.history = history || MatrixHistory.Raw.instance(this);
+        this.dataType = dataType;
+        // this.history = history || MatrixHistory.Raw.instance(this);
 
-        this.color = toColor([this.rows, this.height, this.data], "6789ABCDEF");
-    },
-    toString : function() {
+        this.color = Color.toColor([this.rows, this.height, this.data], "6789ABCDEF");
+    }
+
+    public toString() : string {
         return "Rows: " + this.rows + " Cols: " + this.cols + "\nData: " + JSON.stringify(this.data);
-    },
-    clone : function() {
-        return this._class.instance(this.rows, this.cols, this.data.clone(), this.dataType_var);
-    },
-    numRows : function() {
-        return this.rows;
-    },
-    numCols : function() {
-        return this.cols;
-    },
-    dataType : function() {
-        return this.dataType_var;
-    },
+    }
+
+    public clone() : Matrix {
+        // Note the .slice() copies the data array
+        return new Matrix(this.rows, this.cols, this.data.slice(), this.dataType_var);
+    }
+    
     rawIndex : function(row, col) {
         row = row - 1;
         col = col - 1;
@@ -1786,14 +1846,3 @@ function initializeExamples(){
 
 
 }
-
-
-//    var str = ""
-//    for (var r = 0; r < rows.length; ++r) {
-//        var row = rows[r];
-//        for (var c = 0; c < row.length; ++c) {
-//            str += row[c] + " ";
-//        }
-//        str += "\n";
-//    }
-//    return str;
