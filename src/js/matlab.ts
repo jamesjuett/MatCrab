@@ -235,7 +235,7 @@ export class MatrixIndexHistory extends MatrixHistory {
     private readonly matrixIndex: MatrixIndex;
     private readonly originalMatrix: Matrix;
 
-    public constructor function(matrixIndex: MatrixIndex) {
+    public constructor(matrixIndex: MatrixIndex) {
         super();
         this.matrixIndex = matrixIndex;
         this.originalMatrix = this.matrixIndex.source().clone();
@@ -947,100 +947,89 @@ var DataType = {
     Logical : "logical"
 };
 
-var Variable = Class.extend({
-    _name: "Variable",
+class Variable {
 
-    init: function(identifier, value){
-        this.value = value;
-        this.identifier = identifier;
-        this.name = this.identifier;
-        this.elem = $('<li class="list-group-item"><span class="badge">'+identifier+'</span></li>');
-        var dest = $("<span class='matlab-var-holder'></span>");
-        this.elem.prepend(dest);
+    public readonly name: string;
+    private _value: Matrix;
+
+    public readonly elem: JQuery;
+    private readonly valueElem: JQuery;
+
+
+    public constructor(name: string, value: Matrix) {
+        this.name = name;
+        this._value = value;
+
+        this.elem = $('<li class="list-group-item"><span class="badge">' + name + '</span></li>')
+            .prepend(this.valueElem = $('<span class="matlab-var-holder"></span>'));
 
         // Show initial value
         this.refresh();
-    },
-    htmlElem : function(){
-        return this.elem;
-    },
-    refresh : function() {
+    }
+
+    public refresh() {
         var holder = this.elem.find(".matlab-var-holder");
         holder.empty();
         this.value.visualize_html(holder);
-    },
-    getValue : function() {
-        return this.value;
-    },
-    setValue : function(value) {
-        this.value = value;
-        this.refresh();
-    },
-    matrixValue : function() {
-        return this.value.matrixValue();
-    },
-    visualize_html : function(dest){
-        return this.value.matrixValue().visualize_html(dest);
     }
-});
 
-var Environment = Class.extend({
-    _name: "Environment",
-    varArea: function() {return $("#vars");},
+    public get value() {
+        return this._value;
+    }
 
-    functions : {
+    public set value(value: Matrix) {
+        this._value = value;
+        this.refresh();
+    }
 
-    },
+    // TODO: Remove?
+    // matrixValue : function() {
+    //     return this.value.matrixValue();
+    // }
 
+    public visualize_html(elem: JQuery) {
+        return this.value.visualize_html(elem);
+    }
+}
 
-    //Member functions
-    init : function(){
-        this.vars = {};
+class Environment {
 
-    },
-    hasVar : function(identifier) {
-        return this.vars.hasOwnProperty(identifier);
-    },
-    getVar : function(identifier){
-        return this.vars[identifier];
-    },
-    updateVar : function(identifier){
-        assert(this.vars.hasOwnProperty(identifier), "Internal Error: Can't find identifier " + identifier);
-        var varData = this.vars[identifier];
-        var holder = varData.varItem.find(".matlab-var-holder");
-        holder.empty();
-        varData.value.history.visualize_html(holder);
-    },
-    setVar : function(identifier, value) {
-        if (this.vars.hasOwnProperty(identifier)){
-            this.vars[identifier].setValue(value);
+    public static readonly global : Environment = new Environment($("#vars"));
+
+    private readonly elem : JQuery;
+    private readonly vars : {[index:string] : Variable } = {}
+
+    public constructor (elem: JQuery) {
+        this.elem = elem;
+    }
+
+    public hasVar(name : string) {
+        return this.vars.hasOwnProperty(name);
+    }
+
+    public getVar(name: string){
+        return this.vars[name];
+    }
+
+    public setVar(name: string, value: Matrix) {
+        if (this.hasVar(name)){
+            this.vars[name].value = value;
         }
         else{
-            var v = Variable.instance(identifier, value);
-            if (identifier !== "ans"){
-                this.varArea().append(v.htmlElem());
+            var v = new Variable(name, value);
+            if (name !== "ans"){
+                this.elem.append(v.elem);
             }
             else{
-                this.varArea().prepend(v.htmlElem());
+                this.elem.prepend(v.elem);
             }
-            this.vars[identifier] = v;
+            this.vars[name] = v;
         }
-//            $(".matlab-table").each(function(){
-//                $(this).css("background-color", random_color());
-//            });
     }
-});
+}
 
-var CodeConstruct = Class.extend({
-    _name: "CodeConstruct",
+class CodeConstruct {
 
-    environment : Environment.instance(),
-
-    // Static for now - may decide to change to instance
-    // in order to support separate environments.
-    getEnvironment : function() {
-        return this.environment;
-    },
 
     createRedX : function() {
         return $('<svg><line x1="-20" y1="80%" x2="100%" y2="20%" style="stroke:rgba(255,0,0, 0.3);stroke-width:5" transform="translate(10,0)"></line><line style="stroke:rgba(255,0,0, 0.3);stroke-width:5" y2="80%" x2="100%" y1="20%" x1="-20" transform="translate(10,0)"></line></svg>');
