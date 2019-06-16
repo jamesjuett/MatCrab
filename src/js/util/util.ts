@@ -1,4 +1,6 @@
 
+type Mutable<T> = { -readonly [P in keyof T]: T[P] };
+
 interface Array<T> {
     clear() : void;
 } 

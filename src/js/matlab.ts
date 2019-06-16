@@ -950,7 +950,7 @@ var DataType = {
 class Variable {
 
     public readonly name: string;
-    private _value: Matrix;
+    public readonly value: Matrix;
 
     public readonly elem: JQuery;
     private readonly valueElem: JQuery;
@@ -958,7 +958,7 @@ class Variable {
 
     public constructor(name: string, value: Matrix) {
         this.name = name;
-        this._value = value;
+        this.value = value;
 
         this.elem = $('<li class="list-group-item"><span class="badge">' + name + '</span></li>')
             .prepend(this.valueElem = $('<span class="matlab-var-holder"></span>'));
@@ -973,12 +973,8 @@ class Variable {
         this.value.visualize_html(holder);
     }
 
-    public get value() {
-        return this._value;
-    }
-
-    public set value(value: Matrix) {
-        this._value = value;
+    public setValue(value: Matrix) {
+        (<Mutable<this>>this).value = value;
         this.refresh();
     }
 
