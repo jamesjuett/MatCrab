@@ -29,3 +29,58 @@ export function getQueryString() {
     }
     return query_string;
 }
+export namespace MatlabMath {
+
+    // the initial seed
+    let seed = 0;
+
+    export function random(min: number = 0, max: number = 1) {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seededRandom(seed, min, max);
+    };
+
+    export function seededRandom(seed: number, min: number = 0, max: number = 1) {
+        var rnd = seed / 233280;
+    
+        rnd = min + rnd * (max - min);
+        rnd = Math.max(min, Math.min(max, rnd));
+        return rnd;
+    }
+
+}
+
+export namespace Color {
+
+    export function toColor(obj: {toString(): string}, letters: string = "123456789ABCDEF") {
+
+        // Generate a hash for the object. First toString, then hash the string.
+        // String hash based on https://stackoverflow.com/questions/7616461/generate-a-hash-from-string-in-javascript
+        var str = obj.toString();
+        for (var i = 0, hash = 0; i < str.length; hash = str.charCodeAt(i++) + ((hash << 5) - hash));
+    
+        // use hash as seed for RNG
+        return seededRandomColor(Math.abs(hash), letters);
+    }
+    
+    function seededRandomColor(seed: number, letters: string = "123456789ABCDEF") {
+    
+        // http://stackoverflow.com/questions/1484506/random-color-generator-in-javascript
+        letters = letters || "0123456789ABCDEF";
+        var color = '#';
+        for (var i = 0; i < 6; i++ ) {
+            color += letters[Math.floor(MatlabMath.seededRandom(seed) * letters.length)];
+        }
+        return color;
+    }
+    
+    export function randomColor(letters: string = "123456789ABCDEF") {
+    
+        // http://stackoverflow.com/questions/1484506/random-color-generator-in-javascript
+        letters = letters || "0123456789ABCDEF";
+        var color = '#';
+        for (var i = 0; i < 6; i++ ) {
+            color += letters[Math.floor(MatlabMath.random() * letters.length)];
+        }
+        return color;
+    }
+}

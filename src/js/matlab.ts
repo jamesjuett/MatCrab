@@ -1,61 +1,7 @@
-import { Mutable } from "./util/util";
+import { Mutable, Color } from "./util/util";
 
 
-export namespace MatlabMath {
 
-    // the initial seed
-    let seed = 0;
-
-    export function random(min: number = 0, max: number = 1) {
-        seed = (seed * 9301 + 49297) % 233280;
-        return seededRandom(seed, min, max);
-    };
-
-    export function seededRandom(seed: number, min: number = 0, max: number = 1) {
-        var rnd = seed / 233280;
-    
-        rnd = min + rnd * (max - min);
-        rnd = Math.max(min, Math.min(max, rnd));
-        return rnd;
-    }
-
-}
-
-export namespace Color {
-
-    export function toColor(obj: {toString(): string}, letters: string = "123456789ABCDEF") {
-
-        // Generate a hash for the object. First toString, then hash the string.
-        // String hash based on https://stackoverflow.com/questions/7616461/generate-a-hash-from-string-in-javascript
-        var str = obj.toString();
-        for (var i = 0, hash = 0; i < str.length; hash = str.charCodeAt(i++) + ((hash << 5) - hash));
-    
-        // use hash as seed for RNG
-        return seededRandomColor(Math.abs(hash), letters);
-    }
-    
-    function seededRandomColor(seed: number, letters: string = "123456789ABCDEF") {
-    
-        // http://stackoverflow.com/questions/1484506/random-color-generator-in-javascript
-        letters = letters || "0123456789ABCDEF";
-        var color = '#';
-        for (var i = 0; i < 6; i++ ) {
-            color += letters[Math.floor(MatlabMath.seededRandom(seed) * letters.length)];
-        }
-        return color;
-    }
-    
-    export function randomColor(letters: string = "123456789ABCDEF") {
-    
-        // http://stackoverflow.com/questions/1484506/random-color-generator-in-javascript
-        letters = letters || "0123456789ABCDEF";
-        var color = '#';
-        for (var i = 0; i < 6; i++ ) {
-            color += letters[Math.floor(MatlabMath.random() * letters.length)];
-        }
-        return color;
-    }
-}
 
 
 
@@ -287,52 +233,46 @@ export class Matrix {
         }
     }
 
-    // public append_cols(mats: Matrix[]) {
-    //     mats = mats.map(function(m){return m.matrixValue()});
-    //     var rows = mats[0].rows;
-    //     return new Matrix(
-    //         mats[0].rows,
-    //         mats.reduce(function(prev, current){
-    //             return prev + current.cols;
-    //         },0),
-    //         mats.reduce(function(newData, mat){
-    //             if (mat.rows !== rows){
-    //                 throw {message: "Mismatched matrix number of rows."};
-    //             }
-    //             newData.pushAll(mat.data);
-    //             return newData;
-    //         }, []),
-    //         mats[0].dataType()
-    //         )
-    //     );
-    // }
-    // append_rows : function(mats) {
-    //     mats = mats.map(function(m){return m.matrixValue()});
-    //     var newCols = [];
-    //     var cols = mats[0].cols;
-    //     var newRows = 0;
-    //     for(var i = 0; i < cols; ++i) {
-    //         newCols.push([]);
-    //     }
-    //     for(var i = 0; i < mats.length; ++i) {
-    //         var mat = mats[i];
-    //         newRows += mat.rows;
-    //         if (mat.cols !== cols) {
-    //             throw {message: "Mismatched matrix number of columns."};
-    //         }
-    //         for(var c = 0; c < cols; ++c) {
-    //             for(var r = 0; r < mat.rows; ++r) {
-    //                 newCols[c].push(mat.at(r+1, c+1));
-    //             }
-    //         }
-    //     }
-    //     var newData = [].concat.apply([], newCols);
-    //     return Matrix.instance(newRows, cols, newData, mats[0].dataType(),
-    //         MatrixHistory.AppendRows.instance(mats.map(function(mat){
-    //             return mat.history;
-    //         }))
-    //     );
-    // },
+    public static append_cols(mats: Matrix[]) {
+        var rows = mats[0].rows;
+        return new Matrix(
+            mats[0].rows,
+            mats.reduce(function(prev, current){
+                return prev + current.cols;
+            },0),
+            mats.reduce(function(newData, mat){
+                if (mat.rows !== rows){
+                    throw {message: "Mismatched matrix number of rows."};
+                }
+                newData = newData.concat(mat.data);
+                return newData;
+            }, <Array<number>>[]),
+            mats[0].dataType
+        );
+    }
+
+    public static append_rows(mats: Matrix[]) {
+        var newCols : number[][] = [];
+        var cols = mats[0].cols;
+        var newRows = 0;
+        for(var i = 0; i < cols; ++i) {
+            newCols.push([]);
+        }
+        for(var i = 0; i < mats.length; ++i) {
+            var mat = mats[i];
+            newRows += mat.rows;
+            if (mat.cols !== cols) {
+                throw {message: "Mismatched matrix number of columns."};
+            }
+            for(var c = 0; c < cols; ++c) {
+                for(var r = 0; r < mat.rows; ++r) {
+                    newCols[c].push(mat.at(r+1, c+1));
+                }
+            }
+        }
+        var newData = (<Array<number>>[]).concat.apply([], newCols);
+        return new Matrix(newRows, cols, newData, mats[0].dataType);
+    }
 
     public static scalar(value: number, dataType: DataType) {
         return new Matrix(1, 1, [value], dataType);
@@ -1194,8 +1134,8 @@ export abstract class Expression extends CodeConstruct {
     // the name of the subclass in the code.
     // TODO: Revise to use factory pattern or abstract factory pattern?
     private static grammarToSubclass : {[index: string]: (a: ASTNode) => Expression} = {
-        // "matrix_exp": MatrixExpression,
-        // "row_exp": RowExpression,
+        "matrix_exp": (a:ASTNode) => new MatrixExpression(a),
+        "row_exp": (a:ASTNode) => new RowExpression(a),
         // "range_exp": RangeExpression,
         // "or_exp": MatrixOrExpression,
         // "and_exp": MatrixAndExpression,
@@ -1219,80 +1159,82 @@ export abstract class Expression extends CodeConstruct {
 
 }
 
-// class MatrixExpression extends Expression {
+class MatrixExpression extends Expression {
 
-//     public readonly rows: readonly Expression[];
+    public readonly rows: readonly Expression[];
 
-//     public constructor(ast: ASTNode) {
-//         super(ast);
-//         this.rows = ast["rows"].map((r:any) => Expression.create(r));
-//     }
+    public constructor(ast: ASTNode) {
+        super(ast);
+        this.rows = ast["rows"].map((r:any) => Expression.create(r));
+    }
 
-//     public evaluate() {
-//         var ast = this.ast;
-//         // eval rows
-//         this.rows.forEach(r => {r.evaluate()});
-//         this.setValue(Matrix.append_rows(this.rows.map(function(r){
-//             return r.value.matrixValue();
-//         })));
-//         return this.value;
-//     },
+    public evaluate() {
+        var ast = this.ast;
+        // eval rows
+        this.rows.forEach(r => {r.evaluate()});
+        this.setValue(Matrix.append_rows(this.rows.map(function(r){
+            return r.value!;
+        })));
+        return this.value;
+    }
 
-//     visualize_html : function(elem) {
-//         var table = $("<table></table>");
-//         table.addClass("matlab-table");
-//         table.css("background-color", toColor(this.value, "6789ABCDEF"));
+    public visualize_html(elem: JQuery) {
+        var table = $("<table></table>");
+        table.addClass("matlab-table");
+        table.css("background-color", Color.toColor(this.ast, "6789ABCDEF"));
 
-//         var rows = this.rows;
-//         for (var i = 0; i < rows.length; ++i) {
-//             var tr = $("<tr></tr>");
-//             table.append(tr);
-//             var td = $("<td></td>");
-//             tr.append(td);
-//             rows[i].visualize_html(td, {contained: true});
-//         }
-//         elem.append(table);
-//     }
-// });
+        var rows = this.rows;
+        for (var i = 0; i < rows.length; ++i) {
+            var tr = $("<tr></tr>");
+            table.append(tr);
+            var td = $("<td></td>");
+            tr.append(td);
+            rows[i].visualize_html(td, {contained: true});
+        }
+        elem.append(table);
+    }
+}
 
-// Expression.Row = Expression.extend({
-//     _name : "Expression.Row",
+class RowExpression extends Expression {
+    
+    public readonly cols: readonly Expression[];
 
-//     looksLikeMatrixValue : true,
+    public constructor(ast: ASTNode) {
+        super(ast);
+        this.cols = ast["cols"].map((r:any) => Expression.create(r));
+    }
 
-//     evaluate : function() {
-//         var src = this.src;
-//         this.cols = src["cols"].map(Expression.createAndEvaluate, Expression);
+    public evaluate() {
+        this.cols.forEach(c => {c.evaluate()});
+        this.setValue(Matrix.append_cols(this.cols.map(function(c){
+            return c.value!;
+        })));
+        return this.value;
+    }
 
-//         this.value = Matrix.append_cols(this.cols.map(function(c){
-//             return c.value.matrixValue();
-//         }));
-//         return this.value;
-//     },
+    public visualize_html(elem: JQuery) {
+        var cols = this.cols;
+        if (cols.length == 1) {
+            // Single element row - just visualize the element, not as a row
+            cols[0].visualize_html(elem);
+        }
+        else {
+            var table = $("<table></table>");
+            table.addClass("matlab-table");
+            table.css("background-color", Color.toColor(this.value!, "6789ABCDEF"));
+            var tr = $("<tr></tr>");
+            table.append(tr);
 
-//     visualize_html : function(elem) {
-//         var cols = this.cols;
-//         if (cols.length == 1) {
-//             // Single element row - just visualize the element, not as a row
-//             cols[0].visualize_html(elem);
-//         }
-//         else {
-//             var table = $("<table></table>");
-//             table.addClass("matlab-table");
-//             table.css("background-color", toColor(this.value, "6789ABCDEF"));
-//             var tr = $("<tr></tr>");
-//             table.append(tr);
-
-//             for (var i = 0; i < cols.length; ++i) {
-//                 var td = $("<td></td>");
-//                 tr.append(td);
-//                 var col = cols[i];
-//                 cols[i].visualize_html(td,{contained: true});
-//             }
-//             elem.append(table);
-//         }
-//     }
-// });
+            for (var i = 0; i < cols.length; ++i) {
+                var td = $("<td></td>");
+                tr.append(td);
+                var col = cols[i];
+                cols[i].visualize_html(td,{contained: true});
+            }
+            elem.append(table);
+        }
+    }
+}
 
 // Expression.Range = Expression.extend({
 //     _name : "Expression.Range",
