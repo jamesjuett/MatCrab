@@ -1,3 +1,5 @@
+import { Mutable } from "./util/util";
+
 
 export namespace MatlabMath {
 
@@ -57,11 +59,11 @@ export namespace Color {
 
 
 
-interface Visualizable {
-    visualize_html(containingElem: JQuery) : void
+export interface Visualizable {
+    visualize_html(containingElem: JQuery, options?: {[index:string]: any}) : void
 }
 
-type DataType = "int" | "double" | "logical";
+export type DataType = "int" | "double" | "logical";
 
 export abstract class MatrixHistory implements Visualizable {
 
@@ -395,7 +397,6 @@ export class Matrix {
     private readonly data: number[];
 
     public constructor(rows: number, cols: number, data: number[], dataType: DataType) {
-        assert(rows*cols === data.length, "rows: " + rows + "cols: " + cols + " data: " + data.length);
         this.rows = rows;
         this.cols = cols;
         this.height = rows;
@@ -942,13 +943,7 @@ export class Matrix {
 //     }
 // });
 
-var DataType = {
-    Int : "int",
-    Double : "double",
-    Logical : "logical"
-};
-
-class Variable {
+export class Variable {
 
     public readonly name: string;
     public readonly value: Matrix;
@@ -989,7 +984,7 @@ class Variable {
     }
 }
 
-class Environment {
+export class Environment {
 
     public static readonly global : Environment = new Environment($("#vars"));
 
@@ -1025,9 +1020,9 @@ class Environment {
     }
 }
 
-type ASTNode = any;
+export type ASTNode = any;
 
-abstract class CodeConstruct {
+export abstract class CodeConstruct {
 
 
     // TODO: move somewhere appropriate
@@ -1058,7 +1053,7 @@ abstract class CodeConstruct {
 
 }
 
-class Assignment extends CodeConstruct {
+export class Assignment extends CodeConstruct {
     
     public readonly rhs: Expression;
     public readonly lhs: IdentifierExpression;
@@ -1210,8 +1205,8 @@ export abstract class Expression extends CodeConstruct {
         // "colon_exp": ColonExpression,
         // "end_exp": EndExpression,
         "integer": (a:ASTNode) => new LiteralExpression(a),
-        "float": (a:ASTNode) => new LiteralExpression(a)
-        // "identifier": IdentifierExpression
+        "float": (a:ASTNode) => new LiteralExpression(a),
+        "identifier": (a:ASTNode) => new IdentifierExpression(a)
     }
 
     protected setValue(value: Matrix) {
@@ -1633,7 +1628,7 @@ export abstract class Expression extends CodeConstruct {
 //     }
 // });
 
-class LiteralExpression extends Expression {
+export class LiteralExpression extends Expression {
 
     public constructor(ast: ASTNode) {
         super(ast);
@@ -1665,7 +1660,7 @@ class LiteralExpression extends Expression {
 }
 
 // TODO: reserved words can't be used as identifiers
-class IdentifierExpression extends Expression {
+export class IdentifierExpression extends Expression {
 
     public readonly name: string;
 
@@ -1723,87 +1718,87 @@ class IdentifierExpression extends Expression {
 
 
 // TODO: just typing an identifier should not change ans
-var processAns = function(result) {
-    var ansElem = $("#ansVisualization");
-    if (result && result.matrixValue) {
-        var mat = result.matrixValue();
-        CodeConstruct.getEnvironment().setVar("ans", mat);
-        ansElem.empty();
+// var processAns = function(result) {
+//     var ansElem = $("#ansVisualization");
+//     if (result && result.matrixValue) {
+//         var mat = result.matrixValue();
+//         CodeConstruct.getEnvironment().setVar("ans", mat);
+//         ansElem.empty();
 
-        var wrapper = $("<div></div>");
-        wrapper.addClass("matlab-assignment");
-        wrapper.append("ans");
+//         var wrapper = $("<div></div>");
+//         wrapper.addClass("matlab-assignment");
+//         wrapper.append("ans");
 
-        wrapper.append("&nbsp;=&nbsp;");
+//         wrapper.append("&nbsp;=&nbsp;");
 
-        var rhsElem = $("<div></div>");
-        mat.visualize_html(rhsElem);
-        wrapper.append(rhsElem);
+//         var rhsElem = $("<div></div>");
+//         mat.visualize_html(rhsElem);
+//         wrapper.append(rhsElem);
 
-        ansElem.append(wrapper);
+//         ansElem.append(wrapper);
 
-        ansElem.show();
-    }
-    else{
-        ansElem.hide();
-    }
-};
+//         ansElem.show();
+//     }
+//     else{
+//         ansElem.hide();
+//     }
+// };
 
-function initializeExamples(){
+// function initializeExamples(){
 
-    var examples = [];
+//     var examples = [];
 
-    $(".matlab-example-exp").each(function(){
+//     $(".matlab-example-exp").each(function(){
 
-        var srcElem = $(this).find(".matlab-example-src");
-        var vis = $(this).find(".matlab-example-vis");
+//         var srcElem = $(this).find(".matlab-example-src");
+//         var vis = $(this).find(".matlab-example-vis");
 
-        var updateExample = function () {
-            var text = srcElem.val().trim();
-            vis.empty();
-            try{
-                if (text.length > 0){
-                    var srcText = MATLAB_PARSER.parse(text);
-//                    visualize(exp, $("#visualization"));
-                    var cc = CodeConstruct.instance(srcText);
-                    var result = cc.evaluate();
-                    cc.visualize_html(vis);
-                    processAns(result);
-                }
-            }
-            catch(err) {
-                if (err.visualize_html) {
-                    err.visualize_html(vis);
-                }
-                else{
-                    vis.html(err.message);
-                }
-            }
-        };
+//         var updateExample = function () {
+//             var text = srcElem.val().trim();
+//             vis.empty();
+//             try{
+//                 if (text.length > 0){
+//                     var srcText = MATLAB_PARSER.parse(text);
+// //                    visualize(exp, $("#visualization"));
+//                     var cc = CodeConstruct.instance(srcText);
+//                     var result = cc.evaluate();
+//                     cc.visualize_html(vis);
+//                     processAns(result);
+//                 }
+//             }
+//             catch(err) {
+//                 if (err.visualize_html) {
+//                     err.visualize_html(vis);
+//                 }
+//                 else{
+//                     vis.html(err.message);
+//                 }
+//             }
+//         };
 
-        var exp_in_timeout;
-        srcElem.keypress(function (e) {
-            var code = e.keyCode || e.which;
-            if(code != 13) { //Enter keycode
-                return;
-            }
-            e.preventDefault();
-            var delay = 500; // ms
-            clearTimeout(exp_in_timeout);
-            exp_in_timeout = setTimeout(updateExample, delay)
-            return false;
-        });
+//         var exp_in_timeout;
+//         srcElem.keypress(function (e) {
+//             var code = e.keyCode || e.which;
+//             if(code != 13) { //Enter keycode
+//                 return;
+//             }
+//             e.preventDefault();
+//             var delay = 500; // ms
+//             clearTimeout(exp_in_timeout);
+//             exp_in_timeout = setTimeout(updateExample, delay)
+//             return false;
+//         });
 
-        examples.push({
-            srcElem: srcElem,
-            visElem: vis,
-            update: updateExample
-        });
-    });
+//         examples.push({
+//             srcElem: srcElem,
+//             visElem: vis,
+//             update: updateExample
+//         });
+//     });
 
-    for(var i = 0; i < examples.length; ++i) {
-        examples[i].update();
-    }
+//     for(var i = 0; i < examples.length; ++i) {
+//         examples[i].update();
+//     }
 
 
-}
+// }

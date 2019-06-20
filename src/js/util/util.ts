@@ -1,25 +1,31 @@
 
-type Mutable<T> = { -readonly [P in keyof T]: T[P] };
+export type Mutable<T> = { -readonly [P in keyof T]: T[P] };
 
-interface Array<T> {
-    clear() : void;
-} 
-Array.prototype.clear = function () {
-    this.length = 0;
-}
-
-function debug(message: string, category: string) {
-    if (category){
-        console.log(category + ": " + message);
-        $(".debug."+category).html(""+message); //""+ is to force conversion to string (via .toString if object)
-    }
-    else{
-        console.log(message);
-        $(".debug.debugAll").html(""+message); //""+ is to force conversion to string (via .toString if object)
-    }
-}
-
-var assert = function(condition: any, message = "") {
+export function assert(condition: any, message = "") {
     if (!condition)
         throw Error("Assert failed: " + message);
 };
+
+// http://stackoverflow.com/questions/979975/how-to-get-the-value-from-the-get-parameters
+export function getQueryString() {
+    // This function is anonymous, is executed immediately and
+    // the return value is assigned to QueryString!
+    var query_string: {[index:string]: any} = {};
+    var query = window.location.search.substring(1);
+    var vars = query.split("&");
+    for (var i=0;i<vars.length;i++) {
+        var pair = vars[i].split("=");
+        // If first entry with this name
+        if (typeof query_string[pair[0]] === "undefined") {
+            query_string[pair[0]] = decodeURIComponent(pair[1]);
+            // If second entry with this name
+        } else if (typeof query_string[pair[0]] === "string") {
+            var arr = [ query_string[pair[0]],decodeURIComponent(pair[1]) ];
+            query_string[pair[0]] = arr;
+            // If third or later entry with this name
+        } else {
+            query_string[pair[0]].push(decodeURIComponent(pair[1]));
+        }
+    }
+    return query_string;
+}
