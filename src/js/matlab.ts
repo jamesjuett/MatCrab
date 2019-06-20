@@ -328,6 +328,7 @@ export class Matrix {
     public readonly cols: number;
     public readonly height: number;
     public readonly width: number;
+    public readonly numel: number;
     public readonly dataType: DataType;
 
     public readonly isScalar: boolean;
@@ -341,13 +342,14 @@ export class Matrix {
         this.cols = cols;
         this.height = rows;
         this.width = cols;
+        this.numel = rows * cols;
         this.data = data;
         this.dataType = dataType;
 
         this.isScalar = rows === 1 && cols === 1;
         // this.history = history || MatrixHistory.Raw.instance(this);
 
-        this.color = Color.toColor([this.rows, this.height, this.data], "6789ABCDEF");
+        this.color = Color.toColor([this.rows, this.height, this.data], Color.LIGHT);
     }
 
     public toString() : string {
@@ -1136,7 +1138,7 @@ export abstract class Expression extends CodeConstruct {
     private static grammarToSubclass : {[index: string]: (a: ASTNode) => Expression} = {
         "matrix_exp": (a:ASTNode) => new MatrixExpression(a),
         "row_exp": (a:ASTNode) => new RowExpression(a),
-        // "range_exp": RangeExpression,
+        "range_exp": (a:ASTNode) => new RangeExpression(a),
         // "or_exp": MatrixOrExpression,
         // "and_exp": MatrixAndExpression,
         // "eq_exp": EqualityExpression,
@@ -1181,7 +1183,7 @@ class MatrixExpression extends Expression {
     public visualize_html(elem: JQuery) {
         var table = $("<table></table>");
         table.addClass("matlab-table");
-        table.css("background-color", Color.toColor(this.ast, "6789ABCDEF"));
+        table.css("background-color", Color.toColor(this.ast, Color.LIGHT));
 
         var rows = this.rows;
         for (var i = 0; i < rows.length; ++i) {
@@ -1221,7 +1223,7 @@ class RowExpression extends Expression {
         else {
             var table = $("<table></table>");
             table.addClass("matlab-table");
-            table.css("background-color", Color.toColor(this.value!, "6789ABCDEF"));
+            table.css("background-color", Color.toColor(this.value!, Color.LIGHT));
             var tr = $("<tr></tr>");
             table.append(tr);
 
@@ -1236,47 +1238,84 @@ class RowExpression extends Expression {
     }
 }
 
-// Expression.Range = Expression.extend({
-//     _name : "Expression.Range",
+class RangeExpression extends Expression {
 
-//     looksLikeMatrixValue : true,
+    public readonly start: Expression;
+    public readonly end: Expression;
+    public readonly step: Expression | null;
 
-//     evaluate : function() {
-//         var src = this.src;
-//         this.start = Expression.createAndEvaluate(src.start);
-//         this.end = Expression.createAndEvaluate(src.end);
-//         this.step = src.step ? Expression.createAndEvaluate(src.step) : null;
+    public constructor(ast: ASTNode) {
+        super(ast);
+        this.start = Expression.create(ast.start);
+        this.end = Expression.create(ast.end);
+        this.step = ast.step ? Expression.create(ast.step) : null;
+    }
 
-//         var x = this.start.value.scalarValue();
-//         var end = this.end.value.scalarValue();
-//         var step = this.step ? this.step.value.scalarValue() : 1;
-//         var range = [];
-//         if (step > 0) { // positive step
-//             if (x <= end) { // start < end
-//                 while (x <= end) {
-//                     range.push(x);
-//                     x += step;
-//                 }
-//             }
-//         }
-//         else { // negative step
-//             if (end <= x) { // end <= x
-//                 while (end <= x) {
-//                     range.push(x);
-//                     x += step
-//                 }
-//             }
-//         }
+    public evaluate() {
 
-//         // TODO: check on type of ranges in MATLAB
-//         this.value = Matrix.instance(1, range.length, range, "double", MatrixHistory.Range.instance(range));
-//         return this.value;
-//     },
+        this.start.evaluate();
+        this.end.evaluate();
+        this.step && this.step.evaluate();
 
-//     visualize_html : function(elem) {
-//         this.value.history.visualize_html(elem);
-//     }
-// });
+        // Note: MATLAB will actually accept non-scalar values for the subexpressions
+        //       in range notation. It just grabs the first linear element, which is the
+        //       behavior of .scalarValue() here.
+        let x = this.start.value!.scalarValue();
+        let end = this.end.value!.scalarValue();
+        let step = this.step ? this.step.value!.scalarValue() : 1;
+        let range = <Array<number>>[];
+        if (step > 0) { // positive step
+            if (x <= end) { // start < end
+                while (x <= end) {
+                    range.push(x);
+                    x += step;
+                }
+            }
+        }
+        else { // negative step
+            if (end <= x) { // end <= x
+                while (end <= x) {
+                    range.push(x);
+                    x += step
+                }
+            }
+        }
+
+        // TODO: check on type of ranges in MATLAB
+        this.setValue(new Matrix(1, range.length, range, "double"));
+    }
+
+    public visualize_html(elem: JQuery) {
+        var table = $("<table></table>");
+        table.append('<svg><defs><marker id="arrow" markerWidth="10" markerHeight="10" refx="9" refy="3" orient="auto" markerUnits="strokeWidth"> <path d="M0,0 L0,6 L9,3 z" fill="#000" /> </marker> </defs><g transform="translate(-10,0)"><line x1="22" y1="25" x2="100%" y2="25" stroke="#000" stroke-width="1" marker-end="url(#arrow)" /></g> </svg>');
+
+        table.addClass("matlab-range");
+        table.css("background-color", Color.toColor(this.value!, Color.LIGHT));
+        var tr = $("<tr></tr>");
+        table.append(tr);
+
+        for (var i = 1; i <= this.value!.numel; ++i) {
+            var td = $("<td></td>");
+            tr.append(td);
+
+            // NOTE: The numbers themselves in a range are calculated and thus
+            //       have a history, although in the future it may be useful to
+            //       somehow show the history of the start, step, and end.
+//                    range[i].visualize_html(td);
+            var temp = $("<div></div>");
+            temp.addClass("matlab-scalar");
+            var tempSpan = $("<span></span>");
+            var num = Matrix.formatNumber(this.value!.atLinear(i));
+            if (num.length > 3) {
+                temp.addClass("double");
+            }
+            tempSpan.html(num);
+            temp.append(tempSpan);
+            td.append(temp);
+        }
+        elem.append(table);
+    }
+}
 
 // Expression.BinaryOp = Expression.extend({
 //     _name : "Expression.BinaryOp",

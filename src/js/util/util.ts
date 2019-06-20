@@ -34,13 +34,17 @@ export namespace MatlabMath {
     // the initial seed
     let seed = 0;
 
+    export function setRandomSeed(newSeed: number) {
+        seed = newSeed;
+    }
+
     export function random(min: number = 0, max: number = 1) {
         seed = (seed * 9301 + 49297) % 233280;
         return seededRandom(seed, min, max);
     };
 
     export function seededRandom(seed: number, min: number = 0, max: number = 1) {
-        var rnd = seed / 233280;
+        var rnd = seed % 233280 / 233280;
     
         rnd = min + rnd * (max - min);
         rnd = Math.max(min, Math.min(max, rnd));
@@ -50,6 +54,8 @@ export namespace MatlabMath {
 }
 
 export namespace Color {
+
+    export const LIGHT = "ABCDEF";
 
     export function toColor(obj: {toString(): string}, letters: string = "123456789ABCDEF") {
 
@@ -67,8 +73,9 @@ export namespace Color {
         // http://stackoverflow.com/questions/1484506/random-color-generator-in-javascript
         letters = letters || "0123456789ABCDEF";
         var color = '#';
+        MatlabMath.setRandomSeed(seed);
         for (var i = 0; i < 6; i++ ) {
-            color += letters[Math.floor(MatlabMath.seededRandom(seed) * letters.length)];
+            color += letters[Math.floor(MatlabMath.random() * letters.length)];
         }
         return color;
     }
