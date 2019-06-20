@@ -5,7 +5,7 @@ module.exports = {
   entry: './src/js/main.ts',
   devtool: "inline-source-map",
   output: {
-    path: path.join(__dirname, '/public/js/'),
+    path: path.join(__dirname, '/public/matcrab/js/'),
     filename: 'bundle.js',
   },
   module: {

@@ -986,7 +986,10 @@ export class Variable {
 
 export class Environment {
 
-    public static readonly global : Environment = new Environment($("#vars"));
+    public static readonly global : Environment;
+    public static setGlobalEnvironment(elem: JQuery) {
+        (<Environment>Environment.global) = new Environment(elem);
+    }
 
     private readonly elem : JQuery;
     private readonly vars : {[index:string] : Variable } = {}
@@ -1067,12 +1070,13 @@ export class Assignment extends CodeConstruct {
     public evaluate() {
 
         this.rhs.evaluate();
-        this.lhs.evaluate();
         
         let env = Environment.global;
         let name = this.lhs.name;
 
         env.setVar(name, this.rhs.value!);
+
+        this.lhs.evaluate(); // HACK: ensure lhs knows about new value
     }
 
     public visualize_html(elem: JQuery) {

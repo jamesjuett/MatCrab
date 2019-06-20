@@ -1,6 +1,6 @@
 import {getQueryString} from "./util/util";
 import {SyntaxError, parse as matlab_parse} from "./matlab_parser"
-import { CodeConstruct } from "./matlab";
+import { CodeConstruct, Environment } from "./matlab";
 
 
 // import {gapi} from "https://apis.google.com/js/platform.js";
@@ -10,6 +10,8 @@ import { CodeConstruct } from "./matlab";
 
 $(document).ready(function(){
 
+    Environment.setGlobalEnvironment($("#vars"));
+    
     var queryString = getQueryString();
 
     if (queryString["size"]){
