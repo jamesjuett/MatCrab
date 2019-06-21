@@ -1,6 +1,6 @@
 import {getQueryString} from "./util/util";
 import {SyntaxError, parse as matlab_parse} from "./matlab_parser"
-import { CodeConstruct, Environment } from "./matlab";
+import { CodeConstruct, Environment, MatlabError } from "./matlab";
 
 
 // import {gapi} from "https://apis.google.com/js/platform.js";
@@ -67,13 +67,17 @@ $(document).ready(function(){
                 parseAndEval(text);
             }
             catch(err) {
-                if (err.visualize_html) {
-                    err.visualize_html(vis);
+                if (err instanceof MatlabError) {
+                    if (err.visualize_html) {
+                        err.visualize_html(vis);
+                    }
+                    else{
+                        vis.html(err.message);
+                    }
                 }
-                else{
-                    vis.html(err.message);
+                else {
+                    throw err;
                 }
-                throw err;
                 // processAns(null);
             }
         }, delay);

@@ -18,6 +18,16 @@ export abstract class MatrixHistory implements Visualizable {
     public abstract visualize_html(containingElem: JQuery) : void;
 }
 
+export class MatlabError {
+    public readonly message: string;
+
+    public visualize_html: any = null;
+
+    public constructor(message: string) {
+        this.message = message;
+    }
+}
+
 // class AppendRows extends MatrixHistory {
     
 //     public readonly rows: Visualizable[];
@@ -278,42 +288,42 @@ export class Matrix {
         return new Matrix(1, 1, [value], dataType);
     }
 
-    // // THROWS: on mismatched dimensions
-    // binaryOp : function(leftMat, rightMat, operate, dataType) {
-    //     var newData = [];
-    //     var numRows;
-    //     var numCols;
-    //     if (leftMat.numRows() === rightMat.numRows() && leftMat.numCols() === rightMat.numCols()) {
-    //         // Same dimensions (also covers both scalars)
-    //         for (var i = 0; i < leftMat.length(); ++i) {
-    //             newData.push(operate(leftMat.getRaw0(i), rightMat.getRaw0(i)));
-    //         }
-    //         numRows = leftMat.numRows();
-    //         numCols = leftMat.numCols();
-    //     }
-    //     else if (leftMat.isScalar()){
-    //         var leftScalar = leftMat.scalarValue();
-    //         for (var i = 0; i < rightMat.length(); ++i) {
-    //             newData.push(operate(leftScalar, rightMat.getRaw0(i)));
-    //         }
-    //         numRows = rightMat.numRows();
-    //         numCols = rightMat.numCols();
-    //     }
-    //     else if (rightMat.isScalar()){
-    //         var rightScalar = rightMat.scalarValue();
-    //         for (var i = 0; i < leftMat.length(); ++i) {
-    //             newData.push(operate(leftMat.getRaw0(i), rightScalar));
-    //         }
-    //         numRows = leftMat.numRows();
-    //         numCols = leftMat.numCols();
-    //     }
-    //     else{
-    //         throw {message: "Mismatched dimensions for operator " + this.op + ". LHS is a " +
-    //         leftMat.numRows() + "x" + leftMat.numCols() + " and RHS is a " +
-    //         rightMat.numRows() + "x" + rightMat.numCols() + "."};
-    //     }
-    //     return Matrix.instance(numRows, numCols, newData, dataType);
-    // },
+    // THROWS: on mismatched dimensions
+    public static binaryOp(leftMat: Matrix, rightMat: Matrix, op: string, operate : (left:number, right:number) => number, dataType: DataType) {
+        let newData = [];
+        let numRows;
+        let numCols;
+        if (leftMat.rows === rightMat.rows && leftMat.cols === rightMat.cols) {
+            // Same dimensions (also covers both scalars)
+            for (let i = 1; i <= leftMat.length(); ++i) {
+                newData.push(operate(leftMat.atLinear(i), rightMat.atLinear(i)));
+            }
+            numRows = leftMat.rows;
+            numCols = leftMat.cols;
+        }
+        else if (leftMat.isScalar) {
+            let leftScalar = leftMat.scalarValue();
+            for (let i = 1; i <= rightMat.length(); ++i) {
+                newData.push(operate(leftScalar, rightMat.atLinear(i)));
+            }
+            numRows = rightMat.rows;
+            numCols = rightMat.cols;
+        }
+        else if (rightMat.isScalar) {
+            let rightScalar = rightMat.scalarValue();
+            for (let i = 1; i <= leftMat.length(); ++i) {
+                newData.push(operate(leftMat.atLinear(i), rightScalar));
+            }
+            numRows = leftMat.rows;
+            numCols = leftMat.cols;
+        }
+        else{
+            throw new MatlabError("Mismatched dimensions for operator " + op + ". LHS is a " +
+            leftMat.rows + "x" + leftMat.cols + " and RHS is a " +
+            rightMat.rows + "x" + rightMat.cols + ".");
+        }
+        return new Matrix(numRows, numCols, newData, dataType);
+    }
     // unaryOp : function(mat, operate, dataType) {
     //     var newData = [];
     //     var numRows = mat.numRows();
@@ -987,10 +997,16 @@ export abstract class CodeConstruct {
         }
     }
 
+    public readonly error?: MatlabError;
+
     protected readonly ast: ASTNode;
 
     protected constructor(ast: ASTNode) {
         this.ast = ast;
+    }
+
+    protected setError(error: MatlabError) {
+        (<Mutable<this>>this).error = error;
     }
 
     public abstract evaluate(): void;
@@ -1012,7 +1028,11 @@ export class Assignment extends CodeConstruct {
     public evaluate() {
 
         this.rhs.evaluate();
-        
+
+        if (!this.rhs.value) {
+            return;
+        }
+
         let env = Environment.global;
         let name = this.lhs.name;
 
@@ -1036,18 +1056,20 @@ export class Assignment extends CodeConstruct {
 
         wrapper.append(top);
 
-        let bottom = $("<div></div>");
-        bottom.addClass("matlab-assignment-result");
-        bottom.append(this.lhs.name);
-        bottom.append(" is now ");
-
-
-        let valueElem = $("<div></div>");
-        this.lhs.visualize_html(valueElem);
-        bottom.append(valueElem);
-
-        wrapper.append(top);
-        wrapper.append(bottom);
+        if (this.rhs.value) {
+            // If assignment was successful
+            let bottom = $("<div></div>");
+            bottom.addClass("matlab-assignment-result");
+            bottom.append(this.lhs.name);
+            bottom.append(" is now ");
+    
+    
+            let valueElem = $("<div></div>");
+            this.lhs.visualize_html(valueElem);
+            bottom.append(valueElem);
+    
+            wrapper.append(bottom);
+        }
 
 
         elem.append(wrapper);
@@ -1143,7 +1165,7 @@ export abstract class Expression extends CodeConstruct {
         // "and_exp": MatrixAndExpression,
         // "eq_exp": EqualityExpression,
         // "rel_exp": RelationalExpression,
-        // "add_exp": AddExpression,
+        "add_exp": (a:ASTNode) => new AddExpression(a),
         // "mult_exp": MultExpression,
         // "unary_exp": UnaryOpExpression,
         // "postfix_exp": PostfixExpression,
@@ -1317,82 +1339,94 @@ class RangeExpression extends Expression {
     }
 }
 
-// Expression.BinaryOp = Expression.extend({
-//     _name : "Expression.BinaryOp",
+abstract class BinaryOperatorExpression extends Expression {
 
-//     matrixDataType : "double",
+    public readonly left: Expression;
+    public readonly right: Expression;
+    public readonly op: string;
 
-//     evaluate : function() {
-//         var src = this.src;
-//         this.op = src.op;
-//         this.left = Expression.createAndEvaluate(src.left);
-//         this.right = Expression.createAndEvaluate(src.right);
+    public constructor(ast: ASTNode) {
+        super(ast);
+        this.op = ast.op;
 
-//         var leftMat = this.left.value.matrixValue();
-//         var rightMat = this.right.value.matrixValue();
+        this.left = Expression.create(ast.left);
+        this.right = Expression.create(ast.right);
+    }
 
-//         try{
-//             this.value = Matrix.binaryOp(leftMat, rightMat, this.operators[this.op], this.matrixDataType);
-//         }
-//         catch(err) {
-//             this.err = err;
+    protected abstract readonly dataType: DataType;
+    protected abstract readonly operators: {[index: string]: (left:number, right:number) => number};
 
-//             var self = this;
-//             err.visualize_html = function(elem){
-//                 self.visualize_html(elem)
-//             };
+    public evaluate() {
 
-//             throw err;
-//         }
-//         return this.value;
-//     },
+        this.left.evaluate();
+        this.right.evaluate();
 
-//     visualize_html : function(elem) {
-//         var wrapper = $("<div></div>");
-//         var top = $("<div></div>");
-//         top.addClass("matlab-exp-binaryOp");
-//         var leftElem = $("<div></div>");
-//         this.left.visualize_html(leftElem);
-//         top.append(leftElem);
+        if (!this.left.value || !this.right.value) {
+            return;
+        }
 
-//         var opElem = $("<div></div>");
-//         opElem.html("&nbsp;" + this.op + "&nbsp;");
-//         top.append(opElem);
+        try{
+            this.setValue(Matrix.binaryOp(
+                this.left.value, this.right.value, this.op,
+                this.operators[this.op], this.dataType));
+        }
+        catch(err) {
+            if (!(err instanceof MatlabError)) {
+                throw err;
+            }
 
-//         var rightElem = $("<div></div>");
-//         this.right.visualize_html(rightElem);
-//         top.append(rightElem);
+            this.setError(err);
+
+            var self = this;
+            // err.visualize_html = function(elem: JQuery){
+            //     self.visualize_html(elem)
+            // };
+
+            // throw err;
+        }
+    }
+
+    public visualize_html(elem: JQuery) {
+        var wrapper = $("<div></div>");
+        var top = $("<div></div>");
+        top.addClass("matlab-exp-binaryOp");
+        var leftElem = $("<div></div>");
+        this.left.visualize_html(leftElem);
+        top.append(leftElem);
+
+        var opElem = $("<div></div>");
+        opElem.html("&nbsp;" + this.op + "&nbsp;");
+        top.append(opElem);
+
+        var rightElem = $("<div></div>");
+        this.right.visualize_html(rightElem);
+        top.append(rightElem);
         
-//         elem.append(top);
+        elem.append(top);
         
-//         if (this.err){
-//             top.append(this.createRedX());
+        if (this.error) {
+            top.append(CodeConstruct.createRedX());
 
-//             var bottom = $("<div></div>");
-//             bottom.addClass("matlab-exp-bottom");
-//             var errElem = $("<div></div>");
-//             errElem.addClass("matlab-exp-error");
-//             errElem.html(this.err.message);
-//             bottom.append(errElem);
-//             elem.append(bottom);
-//         }
+            var bottom = $("<div></div>");
+            bottom.addClass("matlab-exp-bottom");
+            var errElem = $("<div></div>");
+            errElem.addClass("matlab-exp-error");
+            errElem.html(this.error.message);
+            bottom.append(errElem);
+            elem.append(bottom);
+        }
 
-//         elem.append(wrapper);
-//     }
-// });
+        elem.append(wrapper);
+    }
+}
 
-// Expression.Add = Expression.BinaryOp.extend({
-//     _name : "Expression.Add",
-
-//     operators : {
-//         "+" : function(a,b) {
-//             return a + b;
-//         },
-//         "-" : function(a, b) {
-//             return a - b;
-//         }
-//     }
-// });
+class AddExpression extends BinaryOperatorExpression {
+    protected readonly dataType = "double";
+    protected readonly operators = {
+        "+" : (a: number, b: number) => a + b,
+        "-" : (a: number, b: number) => a - b,
+    }
+}
 
 // Expression.Mult = Expression.BinaryOp.extend({
 //     _name : "Expression.Mult",
@@ -1670,7 +1704,7 @@ export class IdentifierExpression extends Expression {
 
 
         let valueElem = $("<div></div>");
-        this.value!.visualize_html(valueElem);
+        this.value && this.value.visualize_html(valueElem);
         wrapper.append(valueElem);
 
         var nameElem = $("<div></div>");
