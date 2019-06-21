@@ -63,23 +63,23 @@ $(document).ready(function(){
             var text = (<string>$(self).val()).trim();
             var vis = $("#visualization");
             vis.empty();
-            try{
+            // try{
                 parseAndEval(text);
-            }
-            catch(err) {
-                if (err instanceof MatlabError) {
-                    if (err.visualize_html) {
-                        err.visualize_html(vis);
-                    }
-                    else{
-                        vis.html(err.message);
-                    }
-                }
-                else {
-                    throw err;
-                }
-                // processAns(null);
-            }
+            // }
+            // catch(err) {
+            //     if (err instanceof MatlabError) {
+            //         if (err.visualize_html) {
+            //             err.visualize_html(vis);
+            //         }
+            //         else{
+            //             vis.html(err.message);
+            //         }
+            //     }
+            //     else {
+            //         throw err;
+            //     }
+            //     // processAns(null);
+            // }
         }, delay);
         return false;
     });

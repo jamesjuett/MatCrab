@@ -55,7 +55,8 @@ export namespace MatlabMath {
 
 export namespace Color {
 
-    export const LIGHT = "ABCDEF";
+    export const WHITE = "#FFFFFF";
+    export const LIGHT_LETTERS = "ABCDEF";
 
     export function toColor(obj: {toString(): string}, letters: string = "123456789ABCDEF") {
 

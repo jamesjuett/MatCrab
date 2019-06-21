@@ -20,11 +20,11 @@ export abstract class MatrixHistory implements Visualizable {
 
 export class MatlabError {
     public readonly message: string;
+    public readonly construct: CodeConstruct;
 
-    public visualize_html: any = null;
-
-    public constructor(message: string) {
+    public constructor(construct: CodeConstruct, message: string) {
         this.message = message;
+        this.construct = construct;
     }
 }
 
@@ -243,90 +243,10 @@ export class Matrix {
         }
     }
 
-    public static append_cols(mats: Matrix[]) : ExecutedExpressionResult {
-        var rows = mats[0].rows;
-
-        if (mats.some(m => {return m.rows != rows})) {
-            return errorResult(new MatlabError("Mismatched matrix number of rows."));
-        }
-
-        return successResult(new Matrix(
-            mats[0].rows,
-            mats.reduce(function(prev, current){
-                return prev + current.cols;
-            },0),
-            mats.reduce(function(newData, mat){
-                newData = newData.concat(mat.data);
-                return newData;
-            }, <Array<number>>[]),
-            mats[0].dataType
-        ));
-    }
-
-    public static append_rows(mats: Matrix[]) : ExecutedExpressionResult {
-        var newCols : number[][] = [];
-        var cols = mats[0].cols;
-        var newRows = 0;
-        for(var i = 0; i < cols; ++i) {
-            newCols.push([]);
-        }
-        for(var i = 0; i < mats.length; ++i) {
-            var mat = mats[i];
-            newRows += mat.rows;
-            if (mat.cols !== cols) {
-                return errorResult(new MatlabError("Mismatched matrix number of columns."));
-            }
-            for(var c = 0; c < cols; ++c) {
-                for(var r = 0; r < mat.rows; ++r) {
-                    newCols[c].push(mat.at(r+1, c+1));
-                }
-            }
-        }
-        var newData = (<Array<number>>[]).concat.apply([], newCols);
-        return successResult(new Matrix(newRows, cols, newData, mats[0].dataType));
-    }
-
     public static scalar(value: number, dataType: DataType) {
         return new Matrix(1, 1, [value], dataType);
     }
-
-    // THROWS: on mismatched dimensions
-    public static binaryOp(leftMat: Matrix, rightMat: Matrix, op: string,
-        operate : (left:number, right:number) => number, dataType: DataType) : ExecutedExpressionResult {
-        let newData = [];
-        let numRows;
-        let numCols;
-        if (leftMat.rows === rightMat.rows && leftMat.cols === rightMat.cols) {
-            // Same dimensions (also covers both scalars)
-            for (let i = 1; i <= leftMat.length(); ++i) {
-                newData.push(operate(leftMat.atLinear(i), rightMat.atLinear(i)));
-            }
-            numRows = leftMat.rows;
-            numCols = leftMat.cols;
-        }
-        else if (leftMat.isScalar) {
-            let leftScalar = leftMat.scalarValue();
-            for (let i = 1; i <= rightMat.length(); ++i) {
-                newData.push(operate(leftScalar, rightMat.atLinear(i)));
-            }
-            numRows = rightMat.rows;
-            numCols = rightMat.cols;
-        }
-        else if (rightMat.isScalar) {
-            let rightScalar = rightMat.scalarValue();
-            for (let i = 1; i <= leftMat.length(); ++i) {
-                newData.push(operate(leftMat.atLinear(i), rightScalar));
-            }
-            numRows = leftMat.rows;
-            numCols = leftMat.cols;
-        }
-        else{
-            return errorResult(new MatlabError("Mismatched dimensions for operator " + op + ". LHS is a " +
-            leftMat.rows + "x" + leftMat.cols + " and RHS is a " +
-            rightMat.rows + "x" + rightMat.cols + "."));
-        }
-        return successResult(new Matrix(numRows, numCols, newData, dataType));
-    }
+    
     // unaryOp : function(mat, operate, dataType) {
     //     var newData = [];
     //     var numRows = mat.numRows();
@@ -348,7 +268,7 @@ export class Matrix {
    
     public readonly color: string;
 
-    private readonly data: number[];
+    public readonly data: readonly number[];
 
     public constructor(rows: number, cols: number, data: number[], dataType: DataType) {
         this.rows = rows;
@@ -362,7 +282,7 @@ export class Matrix {
         this.isScalar = rows === 1 && cols === 1;
         // this.history = history || MatrixHistory.Raw.instance(this);
 
-        this.color = Color.toColor([this.rows, this.height, this.data], Color.LIGHT);
+        this.color = Color.toColor([this.rows, this.height, this.data], Color.LIGHT_LETTERS);
     }
 
     public toString() : string {
@@ -385,7 +305,7 @@ export class Matrix {
     }
 
     public setLinear(index: number, value: number) {
-        this.data[index - 1] = value;
+        (<number[]>this.data)[index - 1] = value;
     }
 
     public at(row: number, col: number) {
@@ -397,7 +317,7 @@ export class Matrix {
     public setAt(row: number, col: number, value: number) {
         row = row - 1;
         col = col - 1;
-        this.data[col * this.rows + row] = value;
+        (<number[]>this.data)[col * this.rows + row] = value;
     }
 
     // TODO: This function seems confusing. Perhaps there's a better way.
@@ -1156,9 +1076,14 @@ export interface ErrorExpressionResult {
     readonly error: MatlabError;
 }
 
+export interface SubexpressionErrorExpressionResult {
+    readonly kind: "subexpressionError";
+    readonly error: MatlabError;
+}
+
 const UNEXECUTED : {kind: "unexecuted"} = {kind: "unexecuted"};
 
-export function noErrors(results: ExecutedExpressionResult[]): results is SuccessExpressionResult[] {
+export function allSuccess(results: ExecutedExpressionResult[]): results is SuccessExpressionResult[] {
     return results.every(r => r.kind === "success");
 }
 
@@ -1215,17 +1140,18 @@ export abstract class Expression extends CodeConstruct {
         (<Mutable<this>>this).result = result;
     }
 
-    public requireValue() {
-        if (this.result.kind === "success") {
-            return this.result.value;
-        }
-        else if (this.result.kind === "error") {
-            throw this.result.error;
-        }
-        else {
-            throw this.result;
-        }
-    }
+    // TODO: probably remove this. exceptions undesirable here
+    // public requireValue() {
+    //     if (this.result.kind === "success") {
+    //         return this.result.value;
+    //     }
+    //     else if (this.result.kind === "error") {
+    //         throw this.result.error;
+    //     }
+    //     else {
+    //         throw this.result;
+    //     }
+    // }
 
     public execute() : ExecutedExpressionResult{
         let res = this.evaluate();
@@ -1234,6 +1160,27 @@ export abstract class Expression extends CodeConstruct {
     }
 
     protected abstract evaluate() : ExecutedExpressionResult;
+
+    public visualize_html(elem: JQuery, options?: {[index:string]: any}) {
+        var top = $("<div></div>");
+        this.visualize_expr(top, options);
+        
+        elem.append(top);
+        
+        if (this.result.kind === "error" && this.result.error.construct === this) {
+            top.append(CodeConstruct.createRedX());
+
+            var bottom = $("<div></div>");
+            bottom.addClass("matlab-exp-bottom");
+            var errElem = $("<div></div>");
+            errElem.addClass("matlab-exp-error");
+            errElem.html(this.result.error.message);
+            bottom.append(errElem);
+            elem.append(bottom);
+        }
+    }
+
+    protected abstract visualize_expr(elem: JQuery, options?: {[index:string]: any}): void;
 
 }
 
@@ -1249,19 +1196,46 @@ class MatrixExpression extends Expression {
     public evaluate() {
 
         let rowResults = this.rows.map(r => r.execute());
-        if (noErrors(rowResults)){
-            return Matrix.append_rows(rowResults.map(r => r.value));
+        if (allSuccess(rowResults)){
+            return this.append_rows(rowResults.map(r => r.value));
         }
         else {
-            return rowResults.find(r => {return r.kind === "error";})!;
+            return rowResults.find(r => {return r.kind !== "success";})!;
         }
 
     }
 
-    public visualize_html(elem: JQuery) {
+    private append_rows(mats: Matrix[]) : ExecutedExpressionResult {
+        var newCols : number[][] = [];
+        var cols = mats[0].cols;
+        var newRows = 0;
+        for(var i = 0; i < cols; ++i) {
+            newCols.push([]);
+        }
+        for(var i = 0; i < mats.length; ++i) {
+            var mat = mats[i];
+            newRows += mat.rows;
+            if (mat.cols !== cols) {
+                return errorResult(new MatlabError(this, "Mismatched matrix number of columns."));
+            }
+            for(var c = 0; c < cols; ++c) {
+                for(var r = 0; r < mat.rows; ++r) {
+                    newCols[c].push(mat.at(r+1, c+1));
+                }
+            }
+        }
+        var newData = (<Array<number>>[]).concat.apply([], newCols);
+        return successResult(new Matrix(newRows, cols, newData, mats[0].dataType));
+    }
+
+    public visualize_expr(elem: JQuery) {
         var table = $("<table></table>");
         table.addClass("matlab-table");
-        table.css("background-color", Color.toColor(this.ast, Color.LIGHT));
+        let color = Color.WHITE;
+        if (this.result.kind === "success") {
+            color = this.result.value.color;
+        }
+        table.css("background-color", color);
 
         var rows = this.rows;
         for (var i = 0; i < rows.length; ++i) {
@@ -1287,15 +1261,35 @@ class RowExpression extends Expression {
     public evaluate() {
         let colResults = this.cols.map(c => c.execute());
 
-        if (noErrors(colResults)) {
-            return Matrix.append_cols(colResults.map(c => c.value));
+        if (allSuccess(colResults)) {
+            return this.append_cols(colResults.map(c => c.value));
         }
         else {
-            return colResults.find(r => {return r.kind === "error";})!;
+            return colResults.find(r => {return r.kind !== "success";})!;
         }
     }
 
-    public visualize_html(elem: JQuery) {
+    private append_cols(mats: Matrix[]) : ExecutedExpressionResult {
+        var rows = mats[0].rows;
+
+        if (mats.some(m => {return m.rows != rows})) {
+            return errorResult(new MatlabError(this, "Mismatched matrix number of rows."));
+        }
+
+        return successResult(new Matrix(
+            mats[0].rows,
+            mats.reduce(function(prev, current){
+                return prev + current.cols;
+            },0),
+            mats.reduce(function(newData, mat){
+                newData = newData.concat(mat.data);
+                return newData;
+            }, <Array<number>>[]),
+            mats[0].dataType
+        ));
+    }
+
+    public visualize_expr(elem: JQuery) {
         var cols = this.cols;
         if (cols.length == 1) {
             // Single element row - just visualize the element, not as a row
@@ -1304,7 +1298,11 @@ class RowExpression extends Expression {
         else {
             var table = $("<table></table>");
             table.addClass("matlab-table");
-            table.css("background-color", Color.toColor(this.result, Color.LIGHT));
+            let color = Color.WHITE;
+            if (this.result.kind === "success") {
+                color = this.result.value.color;
+            }
+            table.css("background-color", color);
             var tr = $("<tr></tr>");
             table.append(tr);
 
@@ -1420,50 +1418,71 @@ abstract class BinaryOperatorExpression extends Expression {
         let leftResult = this.left.execute();
         let rightResult = this.right.execute();
 
-        if (leftResult.kind === "error") {
+        if (leftResult.kind !== "success") {
             return leftResult;
         }
 
-        if (rightResult.kind === "error") {
+        if (rightResult.kind !== "success") {
             return rightResult;
         }
 
-        return Matrix.binaryOp(
+        return this.binaryOp(
             leftResult.value, rightResult.value, this.op,
             this.operators[this.op], this.dataType);
     }
 
-    public visualize_html(elem: JQuery) {
-        var wrapper = $("<div></div>");
-        var top = $("<div></div>");
-        top.addClass("matlab-exp-binaryOp");
+    private binaryOp(leftMat: Matrix, rightMat: Matrix, op: string,
+        operate : (left:number, right:number) => number, dataType: DataType) : ExecutedExpressionResult {
+
+        let newData = [];
+        let numRows;
+        let numCols;
+        if (leftMat.rows === rightMat.rows && leftMat.cols === rightMat.cols) {
+            // Same dimensions (also covers both scalars)
+            for (let i = 1; i <= leftMat.length(); ++i) {
+                newData.push(operate(leftMat.atLinear(i), rightMat.atLinear(i)));
+            }
+            numRows = leftMat.rows;
+            numCols = leftMat.cols;
+        }
+        else if (leftMat.isScalar) {
+            let leftScalar = leftMat.scalarValue();
+            for (let i = 1; i <= rightMat.length(); ++i) {
+                newData.push(operate(leftScalar, rightMat.atLinear(i)));
+            }
+            numRows = rightMat.rows;
+            numCols = rightMat.cols;
+        }
+        else if (rightMat.isScalar) {
+            let rightScalar = rightMat.scalarValue();
+            for (let i = 1; i <= leftMat.length(); ++i) {
+                newData.push(operate(leftMat.atLinear(i), rightScalar));
+            }
+            numRows = leftMat.rows;
+            numCols = leftMat.cols;
+        }
+        else{
+            return errorResult(new MatlabError(this, "Mismatched dimensions for operator " + op + ". LHS is a " +
+            leftMat.rows + "x" + leftMat.cols + " and RHS is a " +
+            rightMat.rows + "x" + rightMat.cols + "."));
+        }
+        return successResult(new Matrix(numRows, numCols, newData, dataType));
+    }
+
+
+    public visualize_expr(elem: JQuery) {
+        elem.addClass("matlab-exp-binaryOp");
         var leftElem = $("<div></div>");
         this.left.visualize_html(leftElem);
-        top.append(leftElem);
+        elem.append(leftElem);
 
         var opElem = $("<div></div>");
         opElem.html("&nbsp;" + this.op + "&nbsp;");
-        top.append(opElem);
+        elem.append(opElem);
 
         var rightElem = $("<div></div>");
         this.right.visualize_html(rightElem);
-        top.append(rightElem);
-        
-        elem.append(top);
-        
-        if (this.result.kind === "error") {
-            top.append(CodeConstruct.createRedX());
-
-            var bottom = $("<div></div>");
-            bottom.addClass("matlab-exp-bottom");
-            var errElem = $("<div></div>");
-            errElem.addClass("matlab-exp-error");
-            errElem.html(this.result.error.message);
-            bottom.append(errElem);
-            elem.append(bottom);
-        }
-
-        elem.append(wrapper);
+        elem.append(rightElem);
     }
 }
 
@@ -1707,7 +1726,7 @@ export class LiteralExpression extends Expression {
         return successResult(this.literalValue);
     }
 
-    public visualize_html(elem: JQuery, options?: {[index:string]: any}) {
+    public visualize_expr(elem: JQuery, options?: {[index:string]: any}) {
 
         if (options && options.contained) {
             // TODO: clean this up, remove non-null assertion on this.value! if possible
@@ -1744,11 +1763,11 @@ export class IdentifierExpression extends Expression {
             return successResult(env.getVar(this.name).value);
         }
         else {
-            return errorResult(new MatlabError("Cannot find variable " + this.name));
+            return errorResult(new MatlabError(this, "Cannot find variable " + this.name));
         }
     }
 
-    public visualize_html(elem: JQuery) {
+    public visualize_expr(elem: JQuery) {
         let wrapper = $("<div></div>");
         wrapper.addClass("matlab-identifier");
 
