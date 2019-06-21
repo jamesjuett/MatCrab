@@ -23,7 +23,7 @@ $(document).ready(function(){
         for (var i = 0; i < statements.length; ++i){
             var srcText = matlab_parse(statements[i]);
             var cc = CodeConstruct.create(srcText);
-            cc.evaluate();
+            cc.execute();
         }
     }
 
@@ -33,7 +33,7 @@ $(document).ready(function(){
         if (text.length > 0) {
             var src = matlab_parse(text);
             var cc = CodeConstruct.create(src);
-            var result = cc.evaluate();
+            var result = cc.execute();
             cc.visualize_html(vis);
             //var result = cc.evaluate();
             // processAns(result);

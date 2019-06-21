@@ -243,25 +243,27 @@ export class Matrix {
         }
     }
 
-    public static append_cols(mats: Matrix[]) {
+    public static append_cols(mats: Matrix[]) : ExecutedExpressionResult {
         var rows = mats[0].rows;
-        return new Matrix(
+
+        if (mats.some(m => {return m.rows != rows})) {
+            return errorResult(new MatlabError("Mismatched matrix number of rows."));
+        }
+
+        return successResult(new Matrix(
             mats[0].rows,
             mats.reduce(function(prev, current){
                 return prev + current.cols;
             },0),
             mats.reduce(function(newData, mat){
-                if (mat.rows !== rows){
-                    throw {message: "Mismatched matrix number of rows."};
-                }
                 newData = newData.concat(mat.data);
                 return newData;
             }, <Array<number>>[]),
             mats[0].dataType
-        );
+        ));
     }
 
-    public static append_rows(mats: Matrix[]) {
+    public static append_rows(mats: Matrix[]) : ExecutedExpressionResult {
         var newCols : number[][] = [];
         var cols = mats[0].cols;
         var newRows = 0;
@@ -272,7 +274,7 @@ export class Matrix {
             var mat = mats[i];
             newRows += mat.rows;
             if (mat.cols !== cols) {
-                throw {message: "Mismatched matrix number of columns."};
+                return errorResult(new MatlabError("Mismatched matrix number of columns."));
             }
             for(var c = 0; c < cols; ++c) {
                 for(var r = 0; r < mat.rows; ++r) {
@@ -281,7 +283,7 @@ export class Matrix {
             }
         }
         var newData = (<Array<number>>[]).concat.apply([], newCols);
-        return new Matrix(newRows, cols, newData, mats[0].dataType);
+        return successResult(new Matrix(newRows, cols, newData, mats[0].dataType));
     }
 
     public static scalar(value: number, dataType: DataType) {
@@ -289,7 +291,8 @@ export class Matrix {
     }
 
     // THROWS: on mismatched dimensions
-    public static binaryOp(leftMat: Matrix, rightMat: Matrix, op: string, operate : (left:number, right:number) => number, dataType: DataType) {
+    public static binaryOp(leftMat: Matrix, rightMat: Matrix, op: string,
+        operate : (left:number, right:number) => number, dataType: DataType) : ExecutedExpressionResult {
         let newData = [];
         let numRows;
         let numCols;
@@ -318,11 +321,11 @@ export class Matrix {
             numCols = leftMat.cols;
         }
         else{
-            throw new MatlabError("Mismatched dimensions for operator " + op + ". LHS is a " +
+            return errorResult(new MatlabError("Mismatched dimensions for operator " + op + ". LHS is a " +
             leftMat.rows + "x" + leftMat.cols + " and RHS is a " +
-            rightMat.rows + "x" + rightMat.cols + ".");
+            rightMat.rows + "x" + rightMat.cols + "."));
         }
-        return new Matrix(numRows, numCols, newData, dataType);
+        return successResult(new Matrix(numRows, numCols, newData, dataType));
     }
     // unaryOp : function(mat, operate, dataType) {
     //     var newData = [];
@@ -997,19 +1000,13 @@ export abstract class CodeConstruct {
         }
     }
 
-    public readonly error?: MatlabError;
-
     protected readonly ast: ASTNode;
 
     protected constructor(ast: ASTNode) {
         this.ast = ast;
     }
 
-    protected setError(error: MatlabError) {
-        (<Mutable<this>>this).error = error;
-    }
-
-    public abstract evaluate(): void;
+    public abstract execute(): void;
     public abstract visualize_html(elem: JQuery, options?: {[index:string]: any}): void;
 
 }
@@ -1025,18 +1022,18 @@ export class Assignment extends CodeConstruct {
         this.lhs = <IdentifierExpression>Expression.create(ast["identifier"])
     }
 
-    public evaluate() {
+    public execute() {
 
-        this.rhs.evaluate();
+        let rhsResult = this.rhs.execute();
 
-        if (!this.rhs.value) {
+        if (rhsResult.kind !== "success") {
             return;
         }
 
         let env = Environment.global;
         let name = this.lhs.name;
 
-        env.setVar(name, this.rhs.value!);
+        env.setVar(name, rhsResult.value);
 
         this.lhs.evaluate(); // HACK: ensure lhs knows about new value
     }
@@ -1056,20 +1053,17 @@ export class Assignment extends CodeConstruct {
 
         wrapper.append(top);
 
-        if (this.rhs.value) {
-            // If assignment was successful
-            let bottom = $("<div></div>");
-            bottom.addClass("matlab-assignment-result");
-            bottom.append(this.lhs.name);
-            bottom.append(" is now ");
-    
-    
-            let valueElem = $("<div></div>");
-            this.lhs.visualize_html(valueElem);
-            bottom.append(valueElem);
-    
-            wrapper.append(bottom);
-        }
+        let bottom = $("<div></div>");
+        bottom.addClass("matlab-assignment-result");
+        bottom.append(this.lhs.name);
+        bottom.append(" is now ");
+
+
+        let valueElem = $("<div></div>");
+        this.lhs.visualize_html(valueElem);
+        bottom.append(valueElem);
+
+        wrapper.append(bottom);
 
 
         elem.append(wrapper);
@@ -1144,11 +1138,51 @@ export class Assignment extends CodeConstruct {
 //     }
 // });
 
+export type ExpressionValue = Matrix;
 
+export type ExpressionState = "unexecuted" | "success" | "error";
+
+export interface UnexecutedExpressionResult {
+    readonly kind: "unexecuted";
+}
+
+export interface SuccessExpressionResult {
+    readonly kind: "success";
+    readonly value: ExpressionValue;
+}
+
+export interface ErrorExpressionResult {
+    readonly kind: "error";
+    readonly error: MatlabError;
+}
+
+const UNEXECUTED : {kind: "unexecuted"} = {kind: "unexecuted"};
+
+export function noErrors(results: ExecutedExpressionResult[]): results is SuccessExpressionResult[] {
+    return results.every(r => r.kind === "success");
+}
+
+function successResult(value: ExpressionValue) : SuccessExpressionResult {
+    return {
+        kind: "success",
+        value: value
+    };
+}
+
+function errorResult(error: MatlabError) : ErrorExpressionResult {
+    return {
+        kind: "error",
+        error: error
+    };
+}
+
+export type ExpressionResult = UnexecutedExpressionResult | SuccessExpressionResult | ErrorExpressionResult;
+
+type ExecutedExpressionResult = SuccessExpressionResult | ErrorExpressionResult;
 
 export abstract class Expression extends CodeConstruct {
 
-    public readonly value? : Matrix;
+    public readonly result: ExpressionResult = UNEXECUTED;
 
     public static create(ast: ASTNode) {
         return this.grammarToSubclass[ast["what"]](ast);
@@ -1160,7 +1194,7 @@ export abstract class Expression extends CodeConstruct {
     private static grammarToSubclass : {[index: string]: (a: ASTNode) => Expression} = {
         "matrix_exp": (a:ASTNode) => new MatrixExpression(a),
         "row_exp": (a:ASTNode) => new RowExpression(a),
-        "range_exp": (a:ASTNode) => new RangeExpression(a),
+        // "range_exp": (a:ASTNode) => new RangeExpression(a),
         // "or_exp": MatrixOrExpression,
         // "and_exp": MatrixAndExpression,
         // "eq_exp": EqualityExpression,
@@ -1177,9 +1211,29 @@ export abstract class Expression extends CodeConstruct {
         "identifier": (a:ASTNode) => new IdentifierExpression(a)
     }
 
-    protected setValue(value: Matrix) {
-        (<Mutable<this>>this).value = value;
+    private setResult(result: ExecutedExpressionResult) {
+        (<Mutable<this>>this).result = result;
     }
+
+    public requireValue() {
+        if (this.result.kind === "success") {
+            return this.result.value;
+        }
+        else if (this.result.kind === "error") {
+            throw this.result.error;
+        }
+        else {
+            throw this.result;
+        }
+    }
+
+    public execute() : ExecutedExpressionResult{
+        let res = this.evaluate();
+        this.setResult(res);
+        return res;
+    }
+
+    protected abstract evaluate() : ExecutedExpressionResult;
 
 }
 
@@ -1193,13 +1247,15 @@ class MatrixExpression extends Expression {
     }
 
     public evaluate() {
-        var ast = this.ast;
-        // eval rows
-        this.rows.forEach(r => {r.evaluate()});
-        this.setValue(Matrix.append_rows(this.rows.map(function(r){
-            return r.value!;
-        })));
-        return this.value;
+
+        let rowResults = this.rows.map(r => r.execute());
+        if (noErrors(rowResults)){
+            return Matrix.append_rows(rowResults.map(r => r.value));
+        }
+        else {
+            return rowResults.find(r => {return r.kind === "error";})!;
+        }
+
     }
 
     public visualize_html(elem: JQuery) {
@@ -1229,11 +1285,14 @@ class RowExpression extends Expression {
     }
 
     public evaluate() {
-        this.cols.forEach(c => {c.evaluate()});
-        this.setValue(Matrix.append_cols(this.cols.map(function(c){
-            return c.value!;
-        })));
-        return this.value;
+        let colResults = this.cols.map(c => c.execute());
+
+        if (noErrors(colResults)) {
+            return Matrix.append_cols(colResults.map(c => c.value));
+        }
+        else {
+            return colResults.find(r => {return r.kind === "error";})!;
+        }
     }
 
     public visualize_html(elem: JQuery) {
@@ -1245,7 +1304,7 @@ class RowExpression extends Expression {
         else {
             var table = $("<table></table>");
             table.addClass("matlab-table");
-            table.css("background-color", Color.toColor(this.value!, Color.LIGHT));
+            table.css("background-color", Color.toColor(this.result, Color.LIGHT));
             var tr = $("<tr></tr>");
             table.append(tr);
 
@@ -1260,84 +1319,84 @@ class RowExpression extends Expression {
     }
 }
 
-class RangeExpression extends Expression {
+// class RangeExpression extends Expression {
 
-    public readonly start: Expression;
-    public readonly end: Expression;
-    public readonly step: Expression | null;
+//     public readonly start: Expression;
+//     public readonly end: Expression;
+//     public readonly step: Expression | null;
 
-    public constructor(ast: ASTNode) {
-        super(ast);
-        this.start = Expression.create(ast.start);
-        this.end = Expression.create(ast.end);
-        this.step = ast.step ? Expression.create(ast.step) : null;
-    }
+//     public constructor(ast: ASTNode) {
+//         super(ast);
+//         this.start = Expression.create(ast.start);
+//         this.end = Expression.create(ast.end);
+//         this.step = ast.step ? Expression.create(ast.step) : null;
+//     }
 
-    public evaluate() {
+//     public evaluate() {
 
-        this.start.evaluate();
-        this.end.evaluate();
-        this.step && this.step.evaluate();
+//         this.start.evaluate();
+//         this.end.evaluate();
+//         this.step && this.step.evaluate();
 
-        // Note: MATLAB will actually accept non-scalar values for the subexpressions
-        //       in range notation. It just grabs the first linear element, which is the
-        //       behavior of .scalarValue() here.
-        let x = this.start.value!.scalarValue();
-        let end = this.end.value!.scalarValue();
-        let step = this.step ? this.step.value!.scalarValue() : 1;
-        let range = <Array<number>>[];
-        if (step > 0) { // positive step
-            if (x <= end) { // start < end
-                while (x <= end) {
-                    range.push(x);
-                    x += step;
-                }
-            }
-        }
-        else { // negative step
-            if (end <= x) { // end <= x
-                while (end <= x) {
-                    range.push(x);
-                    x += step
-                }
-            }
-        }
+//         // Note: MATLAB will actually accept non-scalar values for the subexpressions
+//         //       in range notation. It just grabs the first linear element, which is the
+//         //       behavior of .scalarValue() here.
+//         let x = this.start.value!.scalarValue();
+//         let end = this.end.value!.scalarValue();
+//         let step = this.step ? this.step.value!.scalarValue() : 1;
+//         let range = <Array<number>>[];
+//         if (step > 0) { // positive step
+//             if (x <= end) { // start < end
+//                 while (x <= end) {
+//                     range.push(x);
+//                     x += step;
+//                 }
+//             }
+//         }
+//         else { // negative step
+//             if (end <= x) { // end <= x
+//                 while (end <= x) {
+//                     range.push(x);
+//                     x += step
+//                 }
+//             }
+//         }
 
-        // TODO: check on type of ranges in MATLAB
-        this.setValue(new Matrix(1, range.length, range, "double"));
-    }
+//         // TODO: check on type of ranges in MATLAB
+//         this.setValue(new Matrix(1, range.length, range, "double"));
+//     }
 
-    public visualize_html(elem: JQuery) {
-        var table = $("<table></table>");
-        table.append('<svg><defs><marker id="arrow" markerWidth="10" markerHeight="10" refx="9" refy="3" orient="auto" markerUnits="strokeWidth"> <path d="M0,0 L0,6 L9,3 z" fill="#000" /> </marker> </defs><g transform="translate(-10,0)"><line x1="22" y1="25" x2="100%" y2="25" stroke="#000" stroke-width="1" marker-end="url(#arrow)" /></g> </svg>');
+//     public visualize_html(elem: JQuery) {
+//         var table = $("<table></table>");
+//         table.append('<svg><defs><marker id="arrow" markerWidth="10" markerHeight="10" refx="9" refy="3" orient="auto" markerUnits="strokeWidth"> <path d="M0,0 L0,6 L9,3 z" fill="#000" /> </marker> </defs><g transform="translate(-10,0)"><line x1="22" y1="25" x2="100%" y2="25" stroke="#000" stroke-width="1" marker-end="url(#arrow)" /></g> </svg>');
 
-        table.addClass("matlab-range");
-        table.css("background-color", Color.toColor(this.value!, Color.LIGHT));
-        var tr = $("<tr></tr>");
-        table.append(tr);
+//         table.addClass("matlab-range");
+//         table.css("background-color", Color.toColor(this.value!, Color.LIGHT));
+//         var tr = $("<tr></tr>");
+//         table.append(tr);
 
-        for (var i = 1; i <= this.value!.numel; ++i) {
-            var td = $("<td></td>");
-            tr.append(td);
+//         for (var i = 1; i <= this.value!.numel; ++i) {
+//             var td = $("<td></td>");
+//             tr.append(td);
 
-            // NOTE: The numbers themselves in a range are calculated and thus
-            //       have a history, although in the future it may be useful to
-            //       somehow show the history of the start, step, and end.
-//                    range[i].visualize_html(td);
-            var temp = $("<div></div>");
-            temp.addClass("matlab-scalar");
-            var tempSpan = $("<span></span>");
-            var num = Matrix.formatNumber(this.value!.atLinear(i));
-            if (num.length > 3) {
-                temp.addClass("double");
-            }
-            tempSpan.html(num);
-            temp.append(tempSpan);
-            td.append(temp);
-        }
-        elem.append(table);
-    }
-}
+//             // NOTE: The numbers themselves in a range are calculated and thus
+//             //       have a history, although in the future it may be useful to
+//             //       somehow show the history of the start, step, and end.
+// //                    range[i].visualize_html(td);
+//             var temp = $("<div></div>");
+//             temp.addClass("matlab-scalar");
+//             var tempSpan = $("<span></span>");
+//             var num = Matrix.formatNumber(this.value!.atLinear(i));
+//             if (num.length > 3) {
+//                 temp.addClass("double");
+//             }
+//             tempSpan.html(num);
+//             temp.append(tempSpan);
+//             td.append(temp);
+//         }
+//         elem.append(table);
+//     }
+// }
 
 abstract class BinaryOperatorExpression extends Expression {
 
@@ -1358,32 +1417,20 @@ abstract class BinaryOperatorExpression extends Expression {
 
     public evaluate() {
 
-        this.left.evaluate();
-        this.right.evaluate();
+        let leftResult = this.left.execute();
+        let rightResult = this.right.execute();
 
-        if (!this.left.value || !this.right.value) {
-            return;
+        if (leftResult.kind === "error") {
+            return leftResult;
         }
 
-        try{
-            this.setValue(Matrix.binaryOp(
-                this.left.value, this.right.value, this.op,
-                this.operators[this.op], this.dataType));
+        if (rightResult.kind === "error") {
+            return rightResult;
         }
-        catch(err) {
-            if (!(err instanceof MatlabError)) {
-                throw err;
-            }
 
-            this.setError(err);
-
-            var self = this;
-            // err.visualize_html = function(elem: JQuery){
-            //     self.visualize_html(elem)
-            // };
-
-            // throw err;
-        }
+        return Matrix.binaryOp(
+            leftResult.value, rightResult.value, this.op,
+            this.operators[this.op], this.dataType);
     }
 
     public visualize_html(elem: JQuery) {
@@ -1404,14 +1451,14 @@ abstract class BinaryOperatorExpression extends Expression {
         
         elem.append(top);
         
-        if (this.error) {
+        if (this.result.kind === "error") {
             top.append(CodeConstruct.createRedX());
 
             var bottom = $("<div></div>");
             bottom.addClass("matlab-exp-bottom");
             var errElem = $("<div></div>");
             errElem.addClass("matlab-exp-error");
-            errElem.html(this.error.message);
+            errElem.html(this.result.error.message);
             bottom.append(errElem);
             elem.append(bottom);
         }
@@ -1649,22 +1696,25 @@ class AddExpression extends BinaryOperatorExpression {
 
 export class LiteralExpression extends Expression {
 
+    private readonly literalValue : Matrix;
+    
     public constructor(ast: ASTNode) {
         super(ast);
+        this.literalValue = Matrix.scalar(this.ast["value"], "double");
     }
 
     public evaluate() {
-        this.setValue(Matrix.scalar(this.ast["value"], "int"));
-        return this.value;
+        return successResult(this.literalValue);
     }
 
     public visualize_html(elem: JQuery, options?: {[index:string]: any}) {
+
         if (options && options.contained) {
             // TODO: clean this up, remove non-null assertion on this.value! if possible
             let temp = $("<div></div>");
             temp.addClass("matlab-scalar");
             var tempSpan = $("<span></span>");
-            var num = Matrix.formatNumber(this.value!.scalarValue());
+            var num = Matrix.formatNumber(this.literalValue.scalarValue());
             if (num.length > 3) {
                 temp.addClass("double");
             }
@@ -1673,7 +1723,7 @@ export class LiteralExpression extends Expression {
             elem.append(temp);
         }
         else {
-            this.value!.visualize_html(elem);
+            this.literalValue.visualize_html(elem);
         }
     }
 }
@@ -1691,10 +1741,10 @@ export class IdentifierExpression extends Expression {
     public evaluate() {
         let env = Environment.global;
         if (env.hasVar(this.name)) {
-            this.setValue(env.getVar(this.name).value);
+            return successResult(env.getVar(this.name).value);
         }
         else {
-            throw {message: "Cannot find variable " + this.name};
+            return errorResult(new MatlabError("Cannot find variable " + this.name));
         }
     }
 
@@ -1703,9 +1753,11 @@ export class IdentifierExpression extends Expression {
         wrapper.addClass("matlab-identifier");
 
 
-        let valueElem = $("<div></div>");
-        this.value && this.value.visualize_html(valueElem);
-        wrapper.append(valueElem);
+        if (this.result.kind === "success") {
+            let valueElem = $("<div></div>");
+            this.result.value && this.result.value.visualize_html(valueElem);
+            wrapper.append(valueElem);
+        }
 
         var nameElem = $("<div></div>");
         nameElem.addClass("matlab-identifier-name");
