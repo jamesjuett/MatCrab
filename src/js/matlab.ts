@@ -1120,8 +1120,8 @@ export abstract class Expression extends CodeConstruct {
         "matrix_exp": (a:ASTNode) => new MatrixExpression(a),
         "row_exp": (a:ASTNode) => new RowExpression(a),
         "range_exp": (a:ASTNode) => new RangeExpression(a),
-        // "or_exp": MatrixOrExpression,
-        // "and_exp": MatrixAndExpression,
+        "or_exp": (a:ASTNode) => new MatrixOrExpression(a),
+        "and_exp": (a:ASTNode) => new MatrixAndExpression(a),
         // "eq_exp": EqualityExpression,
         // "rel_exp": RelationalExpression,
         "add_exp": (a:ASTNode) => new AddExpression(a),
@@ -1224,7 +1224,8 @@ class MatrixExpression extends Expression {
             }
         }
         var newData = (<Array<number>>[]).concat.apply([], newCols);
-        return successResult(new Matrix(newRows, cols, newData, mats[0].dataType));
+        return successResult(new Matrix(newRows, cols, newData,
+            mats.some(m => m.dataType === "double") ? "double" : mats[0].dataType));
     }
 
     public visualize_expr(elem: JQuery) {
@@ -1284,7 +1285,7 @@ class RowExpression extends Expression {
                 newData = newData.concat(mat.data);
                 return newData;
             }, <Array<number>>[]),
-            mats[0].dataType
+            mats.some(m => m.dataType === "double") ? "double" : mats[0].dataType
         ));
     }
 
@@ -1553,29 +1554,21 @@ class MultExpression extends BinaryOperatorExpression {
     }
 }
 
-// Expression.MatrixOr = Expression.BinaryOp.extend({
-//     _name : "Expression.Amd",
+class MatrixOrExpression extends BinaryOperatorExpression {
+    
+    protected readonly dataType = "logical";
+    protected readonly operators = {
+        "|" : (a: number, b: number) => (a || b) ? 1 : 0
+    }
+}
 
-//     matrixDataType : "logical",
+class MatrixAndExpression extends BinaryOperatorExpression {
 
-//     operators : {
-//         "|" : function(a,b) {
-//             return (a || b) ? 1 : 0;
-//         }
-//     }
-// });
-
-// Expression.MatrixAnd = Expression.BinaryOp.extend({
-//     _name : "Expression.And",
-
-//     matrixDataType : "logical",
-
-//     operators : {
-//         "&" : function(a,b) {
-//             return (a && b) ? 1 : 0;
-//         }
-//     }
-// });
+    protected readonly dataType = "logical";
+    protected readonly operators = {
+        "&" : (a: number, b: number) => (a && b) ? 1 : 0
+    }
+}
 
 // Expression.Equality = Expression.BinaryOp.extend({
 //     _name : "Expression.Equality",
