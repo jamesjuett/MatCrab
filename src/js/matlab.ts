@@ -365,7 +365,7 @@ export class Matrix {
                     td.addClass(this.at(r,c) ? "logical-1" : "logical-0");
                 }
                 let tempSpan = $("<span></span>");
-                tempSpan.html(this.at(r,c).toString());
+                tempSpan.html(Matrix.formatNumber(this.at(r,c)));
                 temp.append(tempSpan);
                 td.append(temp);
                 tr.append(td);
@@ -955,7 +955,7 @@ export class Assignment extends CodeConstruct {
 
         env.setVar(name, rhsResult.value);
 
-        this.lhs.evaluate(); // HACK: ensure lhs knows about new value
+        this.lhs.execute(); // HACK: ensure lhs knows about new value
     }
 
     public visualize_html(elem: JQuery) {
@@ -1125,7 +1125,7 @@ export abstract class Expression extends CodeConstruct {
         // "eq_exp": EqualityExpression,
         // "rel_exp": RelationalExpression,
         "add_exp": (a:ASTNode) => new AddExpression(a),
-        // "mult_exp": MultExpression,
+        "mult_exp": (a:ASTNode) => new MultExpression(a),
         // "unary_exp": UnaryOpExpression,
         // "postfix_exp": PostfixExpression,
         // "call_exp": CallExpression,
@@ -1192,7 +1192,7 @@ class MatrixExpression extends Expression {
         this.rows = ast["rows"].map((r:any) => Expression.create(r));
     }
 
-    public evaluate() {
+    protected evaluate() {
 
         let rowResults = this.rows.map(r => r.execute());
         if (allSuccess(rowResults)){
@@ -1257,7 +1257,7 @@ class RowExpression extends Expression {
         this.cols = ast["cols"].map((r:any) => Expression.create(r));
     }
 
-    public evaluate() {
+    protected evaluate() {
         let colResults = this.cols.map(c => c.execute());
 
         if (allSuccess(colResults)) {
@@ -1329,7 +1329,7 @@ class RangeExpression extends Expression {
         this.step = ast.step ? Expression.create(ast.step) : null;
     }
 
-    public evaluate() {
+    protected evaluate() {
 
         let startResult = this.start.execute();
         let endResult = this.end.execute();
@@ -1441,7 +1441,7 @@ abstract class BinaryOperatorExpression extends Expression {
     protected abstract readonly dataType: DataType;
     protected abstract readonly operators: {[index: string]: (left:number, right:number) => number};
 
-    public evaluate() {
+    protected evaluate() {
 
         let leftResult = this.left.execute();
         let rightResult = this.right.execute();
@@ -1454,9 +1454,18 @@ abstract class BinaryOperatorExpression extends Expression {
             return rightResult;
         }
 
+        let operandError = this.checkOperands(leftResult, rightResult);
+        if (operandError) {
+            return operandError;
+        }
+
         return this.binaryOp(
             leftResult.value, rightResult.value, this.op,
             this.operators[this.op], this.dataType);
+    }
+
+    protected checkOperands(leftResult: SuccessExpressionResult, rightResult: SuccessExpressionResult) : ErrorExpressionResult | null {
+        return null;
     }
 
     private binaryOp(leftMat: Matrix, rightMat: Matrix, op: string,
@@ -1522,41 +1531,27 @@ class AddExpression extends BinaryOperatorExpression {
     }
 }
 
-// Expression.Mult = Expression.BinaryOp.extend({
-//     _name : "Expression.Mult",
+class MultExpression extends BinaryOperatorExpression {
+    protected readonly dataType = "double";
+    protected readonly operators = {
+        "*" : (a: number, b: number) => a * b,
+        "/" : (a: number, b: number) => a / b,
+        ".*" : (a: number, b: number) => a * b,
+        "./" : (a: number, b: number) => a / b,
+        ".^" : (a: number, b: number) => Math.pow(a,b)
+    }
 
-//     operators : {
-//         "*" : function(a,b) {
-//             return a * b;
-//         },
-//         "/" : function(a, b) {
-//             return a / b;
-//         },
-//         "^" : function(a,b) {
-//             return Math.pow(a, b);
-//         },
-//         ".*" : function(a, b) {
-//             return a * b;
-//         },
-//         "./" : function(a,b) {
-//             return a / b;
-//         },
-//         ".^" : function(a, b) {
-//             return Math.pow(a, b);
-//         }
-//     },
-
-//     evaluate : Class._ADDITIONALLY(function(){
-//         if (this.op === "*" || this.op === "/" || this.op === "^"){
-//             var leftMat = this.left.value.matrixValue();
-//             var rightMat = this.right.value.matrixValue();
-//             if (!leftMat.isScalar() && !rightMat.isScalar()){
-//                 throw {message: "Sorry, matrix multiplication, division, and exponentiation are not supported." +
-//                 " You may use the element-wise versions (i.e. .*, ./, .^)."}
-//             }
-//         }
-//     })
-// });
+    protected checkOperands(leftResult: SuccessExpressionResult, rightResult: SuccessExpressionResult) {
+        if (this.op === "*" || this.op === "/" || this.op === "^") {
+            // One must be a scalar, otherwise it's matrix multiplication which is not supported.
+            if (!leftResult.value.isScalar && !rightResult.value.isScalar) {
+                return errorResult(new MatlabError(this, "Sorry, matrix multiplication, division, and exponentiation " +
+                 "are not supported. You may use the element-wise versions (i.e. .*, ./, .^)."));
+            }
+        }
+        return null;
+    }
+}
 
 // Expression.MatrixOr = Expression.BinaryOp.extend({
 //     _name : "Expression.Amd",
@@ -1750,7 +1745,7 @@ export class LiteralExpression extends Expression {
         this.literalValue = Matrix.scalar(this.ast["value"], "double");
     }
 
-    public evaluate() {
+    protected evaluate() {
         return successResult(this.literalValue);
     }
 
@@ -1785,7 +1780,7 @@ export class IdentifierExpression extends Expression {
         this.name = ast["identifier"];
     }
 
-    public evaluate() {
+    protected evaluate() {
         let env = Environment.global;
         if (env.hasVar(this.name)) {
             return successResult(env.getVar(this.name).value);
