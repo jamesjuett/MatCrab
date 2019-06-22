@@ -905,7 +905,7 @@ export abstract class CodeConstruct {
 
     // TODO: move somewhere appropriate
     public static createRedX() {
-        return $('<svg><line x1="-20" y1="80%" x2="100%" y2="20%" style="stroke:rgba(255,0,0, 0.3);stroke-width:5" transform="translate(10,0)"></line><line style="stroke:rgba(255,0,0, 0.3);stroke-width:5" y2="80%" x2="100%" y1="20%" x1="-20" transform="translate(10,0)"></line></svg>');
+        return $('<svg class="matlab-error-svg"><line x1="-20" y1="80%" x2="100%" y2="20%" style="stroke:rgba(255,0,0, 0.3);stroke-width:5" transform="translate(10,0)"></line><line style="stroke:rgba(255,0,0, 0.3);stroke-width:5" y2="80%" x2="100%" y1="20%" x1="-20" transform="translate(10,0)"></line></svg>');
     }
 
     public static create(ast: ASTNode) {
@@ -1119,7 +1119,7 @@ export abstract class Expression extends CodeConstruct {
     private static grammarToSubclass : {[index: string]: (a: ASTNode) => Expression} = {
         "matrix_exp": (a:ASTNode) => new MatrixExpression(a),
         "row_exp": (a:ASTNode) => new RowExpression(a),
-        // "range_exp": (a:ASTNode) => new RangeExpression(a),
+        "range_exp": (a:ASTNode) => new RangeExpression(a),
         // "or_exp": MatrixOrExpression,
         // "and_exp": MatrixAndExpression,
         // "eq_exp": EqualityExpression,
@@ -1162,13 +1162,12 @@ export abstract class Expression extends CodeConstruct {
     protected abstract evaluate() : ExecutedExpressionResult;
 
     public visualize_html(elem: JQuery, options?: {[index:string]: any}) {
-        var top = $("<div></div>");
-        this.visualize_expr(top, options);
-        
-        elem.append(top);
+        var top = $('<div></div>').appendTo(elem);
+        let expr = $('<div class="matlab-exp"></div>').appendTo(top);
+        this.visualize_expr(expr, options);
         
         if (this.result.kind === "error" && this.result.error.construct === this) {
-            top.append(CodeConstruct.createRedX());
+            expr.append(CodeConstruct.createRedX());
 
             var bottom = $("<div></div>");
             bottom.addClass("matlab-exp-bottom");
@@ -1317,84 +1316,113 @@ class RowExpression extends Expression {
     }
 }
 
-// class RangeExpression extends Expression {
+class RangeExpression extends Expression {
 
-//     public readonly start: Expression;
-//     public readonly end: Expression;
-//     public readonly step: Expression | null;
+    public readonly start: Expression;
+    public readonly end: Expression;
+    public readonly step: Expression | null;
 
-//     public constructor(ast: ASTNode) {
-//         super(ast);
-//         this.start = Expression.create(ast.start);
-//         this.end = Expression.create(ast.end);
-//         this.step = ast.step ? Expression.create(ast.step) : null;
-//     }
+    public constructor(ast: ASTNode) {
+        super(ast);
+        this.start = Expression.create(ast.start);
+        this.end = Expression.create(ast.end);
+        this.step = ast.step ? Expression.create(ast.step) : null;
+    }
 
-//     public evaluate() {
+    public evaluate() {
 
-//         this.start.evaluate();
-//         this.end.evaluate();
-//         this.step && this.step.evaluate();
+        let startResult = this.start.execute();
+        let endResult = this.end.execute();
+        let stepResult = this.step && this.step.execute();
+    
+        if (startResult.kind !== "success") {
+            return startResult;
+        }
 
-//         // Note: MATLAB will actually accept non-scalar values for the subexpressions
-//         //       in range notation. It just grabs the first linear element, which is the
-//         //       behavior of .scalarValue() here.
-//         let x = this.start.value!.scalarValue();
-//         let end = this.end.value!.scalarValue();
-//         let step = this.step ? this.step.value!.scalarValue() : 1;
-//         let range = <Array<number>>[];
-//         if (step > 0) { // positive step
-//             if (x <= end) { // start < end
-//                 while (x <= end) {
-//                     range.push(x);
-//                     x += step;
-//                 }
-//             }
-//         }
-//         else { // negative step
-//             if (end <= x) { // end <= x
-//                 while (end <= x) {
-//                     range.push(x);
-//                     x += step
-//                 }
-//             }
-//         }
+        if (endResult.kind !== "success") {
+            return endResult;
+        }
 
-//         // TODO: check on type of ranges in MATLAB
-//         this.setValue(new Matrix(1, range.length, range, "double"));
-//     }
+        if (stepResult && stepResult.kind !== "success") {
+            return stepResult;
+        }
 
-//     public visualize_html(elem: JQuery) {
-//         var table = $("<table></table>");
-//         table.append('<svg><defs><marker id="arrow" markerWidth="10" markerHeight="10" refx="9" refy="3" orient="auto" markerUnits="strokeWidth"> <path d="M0,0 L0,6 L9,3 z" fill="#000" /> </marker> </defs><g transform="translate(-10,0)"><line x1="22" y1="25" x2="100%" y2="25" stroke="#000" stroke-width="1" marker-end="url(#arrow)" /></g> </svg>');
+        // Note: MATLAB will actually accept non-scalar values for the subexpressions
+        //       in range notation. It just grabs the first linear element, which is the
+        //       behavior of .scalarValue() here.
+        let x = startResult.value.scalarValue();
+        let end = endResult.value.scalarValue();
+        let step = stepResult ? stepResult.value.scalarValue() : 1;
+        let range = <Array<number>>[];
+        if (step > 0) { // positive step
+            if (x <= end) { // start < end
+                while (x <= end) {
+                    range.push(x);
+                    x += step;
+                }
+            }
+        }
+        else { // negative step
+            if (end <= x) { // end <= x
+                while (end <= x) {
+                    range.push(x);
+                    x += step
+                }
+            }
+        }
 
-//         table.addClass("matlab-range");
-//         table.css("background-color", Color.toColor(this.value!, Color.LIGHT));
-//         var tr = $("<tr></tr>");
-//         table.append(tr);
+        // TODO: check on type of ranges in MATLAB
+        return successResult(new Matrix(1, range.length, range, "double"));
+    }
 
-//         for (var i = 1; i <= this.value!.numel; ++i) {
-//             var td = $("<td></td>");
-//             tr.append(td);
+    public visualize_expr(elem: JQuery) {
+        elem.addClass("matlab-range");
+        let explanationElem = $('<table class="matlab-table"></table>').appendTo($('<div class="matlab-range-header"></div>').appendTo(elem));
+        let header = $("<tr></tr>").appendTo(explanationElem);
+        header.append($("<th>start</th>"));
+        this.step && header.append($("<th>step</th>"));
+        header.append($("<th>end</th>"));
+        
+        let components = $("<tr></tr>").appendTo(explanationElem);
+        this.start.visualize_html($("<td></td>").appendTo(components));
+        this.step && this.step.visualize_html($("<td></td>").appendTo(components));
+        this.end.visualize_html($("<td></td>").appendTo(components));
 
-//             // NOTE: The numbers themselves in a range are calculated and thus
-//             //       have a history, although in the future it may be useful to
-//             //       somehow show the history of the start, step, and end.
-// //                    range[i].visualize_html(td);
-//             var temp = $("<div></div>");
-//             temp.addClass("matlab-scalar");
-//             var tempSpan = $("<span></span>");
-//             var num = Matrix.formatNumber(this.value!.atLinear(i));
-//             if (num.length > 3) {
-//                 temp.addClass("double");
-//             }
-//             tempSpan.html(num);
-//             temp.append(tempSpan);
-//             td.append(temp);
-//         }
-//         elem.append(table);
-//     }
-// }
+
+        var table = $('<table class="matlab-table"></table>').appendTo($('<div class="matlab-range-result" ></div>').appendTo(elem));
+        table.append('<svg class="matlab-range-svg"><defs><marker id="arrow" markerWidth="10" markerHeight="10" refx="9" refy="3" orient="auto" markerUnits="strokeWidth"> <path d="M0,0 L0,6 L9,3 z" fill="#000" /> </marker> </defs><g transform="translate(-10,0)"><line x1="22" y1="25" x2="100%" y2="25" stroke="#000" stroke-width="1" marker-end="url(#arrow)" /></g> </svg>');
+        // table.addClass("matlab-range");
+
+        var tr = $("<tr></tr>").appendTo(table);
+
+        if (this.result.kind === "success"){
+            let value = this.result.value;
+            table.css("background-color", Color.toColor(value, Color.LIGHT_LETTERS));
+            
+
+            for (var i = 1; i <= value.numel; ++i) {
+                var td = $("<td></td>");
+                tr.append(td);
+
+                // NOTE: The numbers themselves in a range are calculated and thus
+                //       have a history, although in the future it may be useful to
+                //       somehow show the history of the start, step, and end.
+    //                    range[i].visualize_html(td);
+                var temp = $("<div></div>");
+                temp.addClass("matlab-scalar");
+                var tempSpan = $("<span></span>");
+                var num = Matrix.formatNumber(value.atLinear(i));
+                if (num.length > 3) {
+                    temp.addClass("double");
+                }
+                tempSpan.html(num);
+                temp.append(tempSpan);
+                td.append(temp);
+            }
+        }
+
+    }
+}
 
 abstract class BinaryOperatorExpression extends Expression {
 
