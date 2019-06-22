@@ -1122,8 +1122,8 @@ export abstract class Expression extends CodeConstruct {
         "range_exp": (a:ASTNode) => new RangeExpression(a),
         "or_exp": (a:ASTNode) => new MatrixOrExpression(a),
         "and_exp": (a:ASTNode) => new MatrixAndExpression(a),
-        // "eq_exp": EqualityExpression,
-        // "rel_exp": RelationalExpression,
+        "eq_exp": (a:ASTNode) => new EqualityExpression(a),
+        "rel_exp": (a:ASTNode) => new RelationalExpression(a),
         "add_exp": (a:ASTNode) => new AddExpression(a),
         "mult_exp": (a:ASTNode) => new MultExpression(a),
         // "unary_exp": UnaryOpExpression,
@@ -1570,41 +1570,25 @@ class MatrixAndExpression extends BinaryOperatorExpression {
     }
 }
 
-// Expression.Equality = Expression.BinaryOp.extend({
-//     _name : "Expression.Equality",
+class EqualityExpression extends BinaryOperatorExpression {
 
-//     matrixDataType : "logical",
+    protected readonly dataType = "logical";
+    protected readonly operators = {
+        "==" : (a: number, b: number) => (a === b) ? 1 : 0,
+        "~=" : (a: number, b: number) => (a !== b) ? 1 : 0
+    }
+}
 
-//     operators : {
-//         "==" : function(a,b) {
-//             return (a === b) ? 1 : 0;
-//         },
-//         "~=" : function(a, b) {
-//             return (a !== b) ? 1 : 0;
-//         }
-//     }
-// });
+class RelationalExpression extends BinaryOperatorExpression {
 
-// Expression.Relational = Expression.BinaryOp.extend({
-//     _name : "Expression.Relational",
-
-//     matrixDataType : "logical",
-
-//     operators : {
-//         "<" : function(a,b) {
-//             return (a < b) ? 1 : 0;
-//         },
-//         "<=" : function(a, b) {
-//             return (a <= b) ? 1 : 0;
-//         },
-//         ">" : function(a,b) {
-//             return (a > b) ? 1 : 0;
-//         },
-//         ">=" : function(a, b) {
-//             return (a >= b) ? 1 : 0;
-//         }
-//     }
-// });
+    protected readonly dataType = "logical";
+    protected readonly operators = {
+        "<" : (a: number, b: number) => (a < b) ? 1 : 0,
+        "<=" : (a: number, b: number) => (a <= b) ? 1 : 0,
+        ">" : (a: number, b: number) => (a > b) ? 1 : 0,
+        ">=" : (a: number, b: number) => (a >= b) ? 1 : 0
+    }
+}
 
 // Expression.UnaryOp = Expression.extend({
 //     _name : "Expression.UnaryOp",
