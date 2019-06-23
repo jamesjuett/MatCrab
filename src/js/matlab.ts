@@ -1,4 +1,4 @@
-import { Mutable, Color } from "./util/util";
+import { Mutable, Color, assert } from "./util/util";
 
 
 
@@ -247,15 +247,7 @@ export class Matrix {
         return new Matrix(1, 1, [value], dataType);
     }
     
-    // unaryOp : function(mat, operate, dataType) {
-    //     var newData = [];
-    //     var numRows = mat.numRows();
-    //     var numCols = mat.numCols();
-    //     for (var i = 0; i < mat.length(); ++i) {
-    //         newData.push(operate(mat.getRaw0(i)));
-    //     }
-    //     return Matrix.instance(numRows, numCols, newData, dataType);
-    // },
+
 
     public readonly rows: number;
     public readonly cols: number;
@@ -320,12 +312,8 @@ export class Matrix {
         (<number[]>this.data)[col * this.rows + row] = value;
     }
 
-    // TODO: This function seems confusing. Perhaps there's a better way.
-    public length(dimension: 0 | 1 | 2 = 0) {
-        if (dimension === 0){ // either dimension not provided or is 0
-            return this.rows * this.cols;
-        }
-        else if (dimension === 1) {
+    public length(dimension: 1 | 2) {
+        if (dimension === 1) {
             return this.rows;
         }
         else{ // if (dimension === 2) {
@@ -868,6 +856,7 @@ export class Environment {
 
     private readonly elem : JQuery;
     private readonly vars : {[index:string] : Variable } = {}
+    private readonly endValueStack : number[] = [];
 
     public constructor (elem: JQuery) {
         this.elem = elem;
@@ -877,7 +866,7 @@ export class Environment {
         return this.vars.hasOwnProperty(name);
     }
 
-    public getVar(name: string){
+    public getVar(name: string) : Variable | undefined {
         return this.vars[name];
     }
 
@@ -895,6 +884,14 @@ export class Environment {
             }
             this.vars[name] = v;
         }
+    }
+
+    public pushEndValue(value: number) {
+        this.endValueStack.push(value);
+    }
+
+    public popEndValue() {
+        this.endValueStack.pop();
     }
 }
 
@@ -1126,7 +1123,7 @@ export abstract class Expression extends CodeConstruct {
         "rel_exp": (a:ASTNode) => new RelationalExpression(a),
         "add_exp": (a:ASTNode) => new AddExpression(a),
         "mult_exp": (a:ASTNode) => new MultExpression(a),
-        // "unary_exp": UnaryOpExpression,
+        "unary_exp": (a:ASTNode) => new UnaryOperatorExpression(a),
         // "postfix_exp": PostfixExpression,
         // "call_exp": CallExpression,
         // "colon_exp": ColonExpression,
@@ -1477,7 +1474,7 @@ abstract class BinaryOperatorExpression extends Expression {
         let numCols;
         if (leftMat.rows === rightMat.rows && leftMat.cols === rightMat.cols) {
             // Same dimensions (also covers both scalars)
-            for (let i = 1; i <= leftMat.length(); ++i) {
+            for (let i = 1; i <= leftMat.numel; ++i) {
                 newData.push(operate(leftMat.atLinear(i), rightMat.atLinear(i)));
             }
             numRows = leftMat.rows;
@@ -1485,7 +1482,7 @@ abstract class BinaryOperatorExpression extends Expression {
         }
         else if (leftMat.isScalar) {
             let leftScalar = leftMat.scalarValue();
-            for (let i = 1; i <= rightMat.length(); ++i) {
+            for (let i = 1; i <= rightMat.numel; ++i) {
                 newData.push(operate(leftScalar, rightMat.atLinear(i)));
             }
             numRows = rightMat.rows;
@@ -1493,7 +1490,7 @@ abstract class BinaryOperatorExpression extends Expression {
         }
         else if (rightMat.isScalar) {
             let rightScalar = rightMat.scalarValue();
-            for (let i = 1; i <= leftMat.length(); ++i) {
+            for (let i = 1; i <= leftMat.numel; ++i) {
                 newData.push(operate(leftMat.atLinear(i), rightScalar));
             }
             numRows = leftMat.rows;
@@ -1590,119 +1587,128 @@ class RelationalExpression extends BinaryOperatorExpression {
     }
 }
 
-// Expression.UnaryOp = Expression.extend({
-//     _name : "Expression.UnaryOp",
+export type UnaryOperator = "+" | "-" | "~";
 
-//     operators : {
-//         "+" : function(x) {
-//             return x;
-//         },
-//         "-" : function(x) {
-//             return -x;
-//         },
-//         "~" : function(x) {
-//             return x ? 0 : 1;
-//         }
-//     },
+export class UnaryOperatorExpression extends Expression {
 
-//     operatorDataTypes : {
-//         "+" : "double",
-//         "-" : "double",
-//         "~" : "logical"
-//     },
+    public readonly operand: Expression;
+    public readonly op: UnaryOperator;
 
-//     evaluate : function() {
-//         var src = this.src;
-//         this.op = src.op;
-//         this.sub = Expression.createAndEvaluate(src.sub);
+    public constructor(ast: ASTNode) {
+        super(ast);
+        this.op = ast.op;
 
-//         var subMat = this.sub.value.matrixValue();
+        this.operand = Expression.create(ast.left);
+    }
 
-//         this.value = Matrix.unaryOp(subMat, this.operators[this.op], this.operatorDataTypes[this.op]);
-//         return this.value;
-//     },
+    private readonly operators : {[op in UnaryOperator]: (n:number) => number} = {
+        "+" : (x: number) => x,
+        "-" : (x: number) => -x,
+        "~" : (x: number) => x ? 0 : 1
+    };
 
-//     visualize_html : function(elem) {
-//         var wrapper = $("<div></div>");
-//         wrapper.addClass("matlab-exp-unaryOp");
+    private readonly operatorDataTypes :  {[op in UnaryOperator]: DataType} = {
+        "+" : "double",
+        "-" : "double",
+        "~" : "logical"
+    };
 
-//         var opElem = $("<div></div>");
-//         opElem.html(this.op + "&nbsp;");
-//         wrapper.append(opElem);
+    protected evaluate() {
 
-//         var subElem = $("<div></div>");
-//         this.sub.visualize_html(subElem);
-//         wrapper.append(subElem);
+        let operandResult = this.operand.execute();
 
-//         elem.append(wrapper);
-//     }
-// });
+        if (operandResult.kind !== "success") {
+            return operandResult;
+        }
 
+        let operandError = this.checkOperand(operandResult);
+        if (operandError) {
+            return operandError;
+        }
 
-// // TODO: if indexed matrix is modified, should still show original version
-// Expression.Index = Expression.Call = Expression.extend({
-//     _name : "Expression.Call",
+        return this.unaryOp(operandResult.value, this.operators[this.op], this.operatorDataTypes[this.op]);
+    }
 
-//     currentIndexedVariable : null,
-//     currentIndexedDimension : 0,
+    protected checkOperand(operandResult: SuccessExpressionResult) : ErrorExpressionResult | null {
+        return null;
+    }
 
-//     evaluate : function() {
-//         var src = this.src;
-//         this.receiver = Expression.createAndEvaluate(src["receiver"]);
+    private unaryOp(mat: Matrix, operate : (n:number) => number, dataType:DataType) {
+        return successResult(new Matrix(mat.rows, mat.cols, mat.data.map(operate), dataType));
+    }
 
-//         if (isA(this.receiver.value, Variable)){
-//             // Matlab checks for variables first and trys to index them
+    public visualize_expr(elem: JQuery) {
+        var wrapper = $("<div></div>");
+        wrapper.addClass("matlab-exp-unaryOp");
 
-//             //record old matrix being indexed and set to be this one. used for end
-//             var oldIndexedMatrix = Expression.Index.currentIndexedVariable;
-//             Expression.Index.currentIndexedVariable = this.receiver.value;
+        var opElem = $("<div></div>");
+        opElem.html(this.op + "&nbsp;");
+        wrapper.append(opElem);
 
-//             if (src["args"].length === 1){
-//                 this.args = src["args"].map(Expression.createAndEvaluate, Expression);
-//             }
-//             else{
-//                 this.args = src["args"].map(function(arg){
-//                     ++Expression.Index.currentIndexedDimension;
-//                     return Expression.createAndEvaluate(arg);
-//                 });
-//             }
+        var subElem = $("<div></div>");
+        this.operand.visualize_html(subElem);
+        wrapper.append(subElem);
+
+        elem.append(wrapper);
+    }
+}
 
 
-//             this.value = MatrixIndex.instance(this.receiver.value, this.args.map(function(a){
-//                 return a.value === "colon" ? a.value : a.value.matrixValue();
-//             }));
+// TODO: if indexed matrix is modified, should still show original version
+class IndexExpression extends Expression {
 
-//             // set indexed matrix back to what it was
-//             Expression.Index.currentIndexedVariable = oldIndexedMatrix;
-//             Expression.Index.currentIndexedDimension = 0;
+    // currentIndexedVariable : null
+    // currentIndexedDimension : 0,
+    
+    public readonly targetName: string;
+    public readonly indicies: readonly Expression[];
 
-//             return this.value;
-//         }
-//         else{
-// //            else if (this.functions.hasOwnProperty(receiver.identifier)) {
-//             // Then try functions
-//             assert(false, "Sorry, functionality not implemented yet.");
-//         }
-//     },
+    public constructor(ast: ASTNode) {
+        super(ast);
+        // TODO: may be nice to change grammar here to not have a nested identifier
+        this.targetName = ast["receiver"]["identifier"];
+        this.indicies = ast["args"].map((i:ASTNode) => Expression.create(i));
+    }
 
-//     visualize_html : function(elem) {
-//         var wrapper = $("<div></div>");
-//         wrapper.addClass("matlab-exp-index");
+    protected evaluate() {
+        let vari = Environment.global.getVar(this.targetName);
+        if (!vari) {
+            return errorResult(new MatlabError(this, "Sorry, I can't find a variable or function named " + this.targetName));
+        }
+
+        let target = vari.value;
+
+        assert(this.indicies.length <= 2, "More than 2D indexing not currently supported"); 
+        let indicesResults = this.indicies.map((index, i) => {
+            Environment.global.pushEndValue(target.length(<1|2>(i+1)));
+            index.execute();
+            Environment.global.popEndValue();
+        });
+
+        return MatrixIndex.instance(this.receiver.value, this.args.map(function(a){
+            return a.value === "colon" ? a.value : a.value.matrixValue();
+        }));
+
+    }
+
+    visualize_html : function(elem) {
+        var wrapper = $("<div></div>");
+        wrapper.addClass("matlab-exp-index");
 
 
-//         var valueElem = $("<div></div>");
-//         this.value.visualize_html(valueElem);
-//         wrapper.append(valueElem);
+        var valueElem = $("<div></div>");
+        this.value.visualize_html(valueElem);
+        wrapper.append(valueElem);
 
-//         var nameElem = $("<div></div>");
-//         nameElem.addClass("matlab-identifier-name");
-//         nameElem.html(this.receiver.value.name);
-//         wrapper.append(nameElem);
+        var nameElem = $("<div></div>");
+        nameElem.addClass("matlab-identifier-name");
+        nameElem.html(this.receiver.value.name);
+        wrapper.append(nameElem);
 
 
-//         elem.append(wrapper);
-//     }
-// });
+        elem.append(wrapper);
+    }
+});
 
 // Expression.Colon = Expression.extend({
 //     _name: "Expression.Colon",
