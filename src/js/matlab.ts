@@ -1,4 +1,4 @@
-import { Mutable, Color, assert } from "./util/util";
+import { Mutable, Color, assert, cloneArray } from "./util/util";
 
 
 
@@ -9,7 +9,7 @@ export interface Visualizable {
     visualize_html(containingElem: JQuery, options?: {[index:string]: any}) : void
 }
 
-export type DataType = "int" | "double" | "logical";
+export type DataType = "double" | "logical";
 
 export abstract class MatrixHistory implements Visualizable {
 
@@ -365,52 +365,55 @@ export class Matrix {
 
 }
 
-// var MatrixIndex = Class.extend({
-//     _name: "MatrixIndex",
+abstract class Subarray {
 
-//     delegate : function(variable, indices) {
-//         if (indices.length > 1) {
-//             return this.Coordinates;
-//         }
-//         var index = indices[0];
-//         if (index === "colon" || index.dataType() !== "logical") {
-//             return this.Indices;
-//         }
-//         else{
-//             return this.Logical;
-//         }
-//     },
+    // @throws {string} If the subarray is not well-formed w.r.t its variable
+    //                  (e.g. subarray specifies out-of-bound indices).
+    public static create(variable: Variable, linearIndices: Matrix | ":") : Subarray;
+    public static create(variable: Variable, rowIndices: Matrix | ":", colIndices: Matrix | ":") : Subarray;
+    public static create(variable: Variable, indices1: Matrix | ":", indices2?: Matrix | ":") {
+        // if (!indices2) {
+            return LinearSubarray.create(variable, indices1);
+        // }
+        // else {
+        //     return new CoordinateSubarray(variable, indices1, indices2);
+        // }
+    }
 
-//     init : function(variable) {
-//         this.variable_ = variable;
-//         this.originalMatrix = this.source().clone();
+    protected readonly variable: Variable;
+    // protected readonly originalMatrix: Matrix;
 
-//         this.color = this.originalMatrix.color;
-//         this.history = MatrixHistory.MatrixIndex.instance(this);
-//     },
-//     variable : function() {
-//         return this.variable_;
-//     },
-//     source : function () {
-//         return this.variable_.value;
-//     },
+    // @throws {string} If the subarray is not well-formed w.r.t its variable
+    //                  (e.g. subarray specifies out-of-bound indices).
+    protected constructor(variable: Variable) {
+        this.variable = variable;
+        // this.originalMatrix = variable.value.clone();
 
-//     visualize_html : function(dest){
-//         this.history.visualize_html(dest);
-//     },
+        // this.color = this.originalMatrix.color;
+        // this.history = MatrixHistory.MatrixIndex.instance(this);
+    }
 
-//     isSelected : Class._ABSTRACT,
-//     length : Class._ABSTRACT,
+    public abstract visualize_html(elem: JQuery, options?: {[index:string]: any}): void;
 
-//     // THROWS: in case of a dimension mismatch
-//     assign : Class._ABSTRACT,
+    // @throws {string} If the value cannot be determined (e.g. subarray specifies out-of-bound indices).
+    public abstract readonly value : Matrix;
 
+    // TODO: remove?
+    // public abstract readonly dimensions : readonly number[];
 
-//     matrixValue : Class._ABSTRACT
-// });
+    // @throws {string} If assignment cannot be performed (e.g. due to a dimension mismatch).
+    public abstract assign(value: Matrix) : void;
 
-// MatrixIndex.Coordinates = MatrixIndex.extend({
-//     _name: "MatrixIndex.Coordinates",
+    // @throws {string} If the subarray is not well-formed w.r.t its variable
+    //                  (e.g. subarray specifies out-of-bound indices).
+    // public abstract verify() : void;
+}
+
+// class CoordinatesSubarray extends Subarray {
+    
+//     public constructor(variable: Variable, indices: readonly Matrix[]) {
+//         super(variable);
+//     }
 
 //     init : function(variable, indices) {
 //         this.initParent(variable);
@@ -632,100 +635,165 @@ export class Matrix {
 //     }
 // });
 
-// MatrixIndex.Indices.Regular = MatrixIndex.Indices.extend({
-//     _name: "MatrixIndex.Indices",
 
-//     delegate : function(variable, indices) {
-//         if (indices[0] === "colon") {
-//             return this.Colon;
+
+// class LinearIndexer {
+
+//     public static create(variable: Variable, indices: Matrix | ":") {
+//         if (indices === ":") {
+//             return new LinearAllIndexer(variable);
 //         }
-//     },
-    
-//     init : function(variable, indices) {
-//         this.initParent(variable);
-//         this.indexMatrix = indices[0];
-
-//         // Check that none of the indices are too large
-//         var sourceLen = this.source().length();
-//         for (var i = 0; i < this.indexMatrix.length(); ++i) {
-//             var index = this.indexMatrix.getRaw0(i);
-//             if (index < 1 || sourceLen < index) {
-//                 throw {message: "Index " + index + " is out of bounds for the source matrix."};
-//             }
+//         else if (indices.dataType === "logical") {
+//             return new LinearLogicalIndexer(variable, indices);
 //         }
-//     },
-
-//     isSelected : function(r, c){
-//         return this.indexMatrix.contains(this.source().rawIndex(r, c));
-//     },
-//     length : function() {
-//         return this.indexMatrix.length();
-//     },
-//     matrixValue : function(){
-//         var copyData = [];
-//         var source = this.source();
-//         for(var i = 0; i < this.indexMatrix.length(); ++i) {
-//             copyData.push(source.getRaw(this.indexMatrix.getRaw0(i)));
+//         else {
+//             return new LinearRegularIndexer(variable, indices);
 //         }
-//         return Matrix.instance(this.indexMatrix.numRows(), this.indexMatrix.numCols(), copyData, this.source().dataType(), this.history);
-//     },
-//     assign : function(mat) {
-//         var thisLength = this.length();
-//         var matLength = mat.length();
-//         var source = this.source();
-
-//         if (mat.isScalar()) {
-//             var scalarValue = mat.scalarValue();
-//             for(var i = 0; i < this.indexMatrix.length(); ++i) {
-//                 source.setRaw(this.indexMatrix.getRaw0(i), scalarValue);
-//             }
-//         }
-//         else if (thisLength === matLength) {
-//             for(var i = 0; i < this.indexMatrix.length(); ++i) {
-//                 source.setRaw(this.indexMatrix.getRaw0(i), mat.getRaw0(i));
-//             }
-//         }
-//         else{
-//             throw {message: "The length of the RHS matrix (" + matLength + ") does not match the" +
-//             " number of indices selected from the matrix on the LHS (" + thisLength + ")."};
-//         }
-
-//         this.variable().refresh();
-//     },
-
-//     visualize_html : function(dest) {
-//         var source = this.source();
-//         var table = $("<table></table>");
-//         table.addClass("matlab-index");
-//         table.css("background-color", this.color);
-//         for (var r = 1; r <= source.numRows(); ++r) {
-//             var tr = $("<tr></tr>");
-//             table.append(tr);
-//             for (var c = 1; c <= source.numCols(); ++c) {
-//                 var td = $("<td><div class='highlight'></div></td>");
-//                 if (this.isSelected(r, c)){
-//                     td.addClass("selected");
-//                 }
-
-//                 var rawIndexElem = $("<div></div>");
-//                 rawIndexElem.addClass("matlab-raw-index");
-//                 rawIndexElem.html(source.rawIndex(r,c));
-//                 td.append(rawIndexElem);
-
-//                 var temp = $("<div></div>");
-//                 temp.addClass("matlab-scalar");
-//                 var tempSpan = $("<span></span>");
-//                 tempSpan.html(this.originalMatrix.at(r,c));
-//                 temp.append(tempSpan);
-//                 td.append(temp);
-//                 tr.append(td);
-//             }
-
-//         }
-
-//         dest.append(table);
 //     }
-// });
+
+//     private readonly variable: Variable;
+
+//     public abstract readonly indices: readonly number[];
+
+//     protected constructor(variable: Variable) {
+//         this.variable = variable;
+//     }
+// }
+
+// class LinearAllIndexer extends LinearIndexer {
+
+//     public readonly indices: readonly number[];
+
+//     public constructor(variable: Variable) {
+//         super(variable);
+//         let indices = [];
+//         for(let i = 1; i < variable.value.numel; ++i) {
+//             indices.push(i);
+//         }
+//         this.indices = indices;
+//     }
+// }
+
+// class LinearRegularIndexer extends LinearIndexer {
+//     public readonly indices: readonly number[];
+
+//     public constructor(variable: Variable, indices: readonly number[]) {
+//         super(variable);
+//         this.indices = cloneArray(indices);
+//     }
+// }
+
+abstract class LinearSubarray extends Subarray {
+
+    public static create(variable: Variable, indices: Matrix | ":") {
+        // if (indices === ":") {
+        //     return new AllLinearSubarray(variable);
+        // }
+        // else if (indices.dataType === "logical") {
+        //     return new LogicalLinearSubarray(variable, indices);
+        // }
+        // else {
+            return new RegularLinearSubarray(variable, <Matrix>indices);
+        // }
+    }
+
+    protected constructor(variable: Variable) {
+        super(variable);
+    }
+
+}
+
+class RegularLinearSubarray extends LinearSubarray {
+
+    public readonly indices: Matrix;
+
+    private _value?: Matrix;
+
+    public constructor(variable: Variable, indices: Matrix) {
+        super(variable);
+        this.indices = indices;
+
+        var sourceLen = this.variable.value.numel;
+        this.indices.data.forEach(index => {
+            if (index < 1 || sourceLen < index) {
+                throw {message: "Index " + index + " is out of bounds for the source matrix."};
+            }
+        });
+    }
+    // isSelected : function(r, c){
+    //     return this.indexMatrix.contains(this.source().rawIndex(r, c));
+    // },
+ 
+
+    get value() : Matrix {
+        if (this._value) {
+            return this._value;
+        }
+
+        let target = this.variable.value;
+        return this._value = new Matrix(
+            this.indices.rows, this.indices.cols,
+            this.indices.data.map(index => target.atLinear(index)),
+            target.dataType
+        );
+    }
+
+    public assign(value: Matrix) {
+        let mat = this.variable.value;
+        if (value.isScalar) {
+            let s = value.scalarValue();
+            this.indices.data.forEach(index => {
+                mat.setLinear(index, s);
+            });
+            return;
+        }
+        else if (this.indices.numel == value.numel) {
+            this.indices.data.forEach((index, valueIndex) => {
+                mat.setLinear(index, value.atLinear(valueIndex));
+            })
+        }
+        else{
+            throw "The length of the RHS matrix (" + value.numel + ") does not match the" +
+            " number of indices selected from the matrix on the LHS (" + this.indices.numel + ").";
+        }
+
+        this.variable.refresh();
+    }
+
+    public visualize_html(elem: JQuery, options?: {[index:string]: any}) {
+        var source = this.variable.value
+        var table = $("<table></table>");
+        table.addClass("matlab-index");
+        table.css("background-color", source.color);
+        let indicesSet = new Set(this.indices.data);
+        for (var r = 1; r <= source.rows; ++r) {
+            var tr = $("<tr></tr>");
+            table.append(tr);
+            for (var c = 1; c <= source.cols; ++c) {
+                let td = $("<td><div class='highlight'></div></td>");
+
+                if (indicesSet.has(source.linearIndex(r, c))) {
+                    td.addClass("selected");
+                }
+
+                var rawIndexElem = $("<div></div>");
+                rawIndexElem.addClass("matlab-raw-index");
+                rawIndexElem.html("" + source.linearIndex(r,c));
+                td.append(rawIndexElem);
+
+                var temp = $("<div></div>");
+                temp.addClass("matlab-scalar");
+                var tempSpan = $("<span></span>");
+                tempSpan.html("" + source.at(r,c));
+                temp.append(tempSpan);
+                td.append(temp);
+                tr.append(td);
+            }
+        }
+
+        elem.append(table);
+    }
+}
 
 // MatrixIndex.Indices.Colon = MatrixIndex.Indices.extend({
 //     _name: "MatrixIndex.Indices.Colon",
@@ -1125,7 +1193,7 @@ export abstract class Expression extends CodeConstruct {
         "mult_exp": (a:ASTNode) => new MultExpression(a),
         "unary_exp": (a:ASTNode) => new UnaryOperatorExpression(a),
         // "postfix_exp": PostfixExpression,
-        // "call_exp": CallExpression,
+        "call_exp": (a:ASTNode) => new IndexExpression(a),
         // "colon_exp": ColonExpression,
         // "end_exp": EndExpression,
         "integer": (a:ASTNode) => new LiteralExpression(a),
@@ -1663,6 +1731,8 @@ class IndexExpression extends Expression {
     public readonly targetName: string;
     public readonly indicies: readonly Expression[];
 
+    public readonly subarrayResult?: Subarray;
+
     public constructor(ast: ASTNode) {
         super(ast);
         // TODO: may be nice to change grammar here to not have a nested identifier
@@ -1678,37 +1748,60 @@ class IndexExpression extends Expression {
 
         let target = vari.value;
 
-        assert(this.indicies.length <= 2, "More than 2D indexing not currently supported"); 
+        if (this.indicies.length > 2) {
+            return errorResult(new MatlabError(this, "Sorry, indexing in more that two dimensions is not currently supported."));
+        }
+
+        assert(this.indicies.length <= 2, "More than 2D indexing not currently supported");
         let indicesResults = this.indicies.map((index, i) => {
             Environment.global.pushEndValue(target.length(<1|2>(i+1)));
-            index.execute();
+            let res = index.execute();
             Environment.global.popEndValue();
+            return res;
         });
 
-        return MatrixIndex.instance(this.receiver.value, this.args.map(function(a){
-            return a.value === "colon" ? a.value : a.value.matrixValue();
-        }));
+        
+        if (allSuccess(indicesResults)) {
+            if (indicesResults.length === 1) {
+                (<Mutable<this>>this).subarrayResult = Subarray.create(vari, indicesResults[0].value);
+                return successResult(this.subarrayResult!.value);
+            }
+            else {
+                // TODO
+                return <never>assert(false);
+            }
+        }
+        else {
+            return indicesResults.find(r => {return r.kind !== "success";})!;
+        }
+
+        
 
     }
 
-    visualize_html : function(elem) {
+    protected visualize_expr(elem: JQuery, options?: {[index:string]: any}) {
         var wrapper = $("<div></div>");
         wrapper.addClass("matlab-exp-index");
 
 
         var valueElem = $("<div></div>");
-        this.value.visualize_html(valueElem);
+        if (this.subarrayResult) {
+            this.subarrayResult.visualize_html(valueElem);
+        }
+        else {
+            // TODO
+        }
         wrapper.append(valueElem);
 
         var nameElem = $("<div></div>");
         nameElem.addClass("matlab-identifier-name");
-        nameElem.html(this.receiver.value.name);
+        nameElem.html(this.targetName);
         wrapper.append(nameElem);
 
 
         elem.append(wrapper);
     }
-});
+}
 
 // Expression.Colon = Expression.extend({
 //     _name: "Expression.Colon",
@@ -1765,8 +1858,9 @@ export class IdentifierExpression extends Expression {
 
     protected evaluate() {
         let env = Environment.global;
-        if (env.hasVar(this.name)) {
-            return successResult(env.getVar(this.name).value);
+        let vari = env.getVar(this.name);
+        if (vari) {
+            return successResult(vari.value);
         }
         else {
             return errorResult(new MatlabError(this, "Cannot find variable " + this.name));

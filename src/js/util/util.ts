@@ -6,6 +6,10 @@ export function assert(condition: any, message = "") {
         throw Error("Assert failed: " + message);
 };
 
+export function cloneArray<T>(arr: readonly T[]) {
+    return arr.slice();
+} 
+
 // http://stackoverflow.com/questions/979975/how-to-get-the-value-from-the-get-parameters
 export function getQueryString() {
     // This function is anonymous, is executed immediately and
