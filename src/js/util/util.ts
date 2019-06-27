@@ -10,6 +10,7 @@ export function cloneArray<T>(arr: readonly T[]) {
     return arr.slice();
 } 
 
+
 // http://stackoverflow.com/questions/979975/how-to-get-the-value-from-the-get-parameters
 export function getQueryString() {
     // This function is anonymous, is executed immediately and
@@ -55,6 +56,14 @@ export namespace MatlabMath {
         return rnd;
     }
 
+    export function range(start: number, end: number, step: number = 1) {
+        let arr = [];
+        while(start <= end) {
+            arr.push(start);
+            start += step;
+        }
+        return arr;
+    }
 }
 
 export namespace Color {

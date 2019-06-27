@@ -1,4 +1,4 @@
-import { Mutable, Color, assert, cloneArray } from "./util/util";
+import { Mutable, Color, assert, cloneArray, MatlabMath } from "./util/util";
 
 
 
@@ -419,7 +419,103 @@ abstract class Subarray {
     public abstract verify() : void;
 }
 
-// class CoordinatesSubarray extends Subarray {
+abstract class CoordinateSubarray extends Subarray {
+
+    public static create(variable: Variable, rowIndices: Matrix | ":", colIndices: Matrix | ":") {
+
+        return new CoordinateSubarray(rowIndices, colIndices);
+        if (indices === ":") {
+            return new AllLinearSubarray(variable);
+        }
+        else if (indices.dataType === "logical") {
+            return new LogicalLinearSubarray(variable, indices);
+        }
+        else {
+            return new RegularLinearSubarray(variable, <Matrix>indices);
+        }
+    }
+
+    protected constructor(variable: Variable) {
+        super(variable);
+    }
+
+}
+
+abstract class CoordinateIndexer {
+
+    public static readonly DIMENSION_NAMES = ["", "row", "column"];
+
+
+    public readonly variable: Variable;
+    public readonly dimension: 1 | 2;
+    public readonly selectedIndices: readonly number[];
+
+    protected constructor(variable: Variable, dimension: 1 | 2, selectedIndices: readonly number[]) {
+        this.variable = variable;
+        this.dimension = dimension;
+        this.selectedIndices = selectedIndices;
+    }
+
+    public abstract verify() : void;
+
+}
+
+class RegularCoordinateIndexer extends CoordinateIndexer {
+
+    protected constructor(variable: Variable, dimension: 1 | 2, selectedIndices: Matrix) {
+        super(variable, dimension, selectedIndices.data);
+    }
+
+    public verify() {
+        let dimLen = this.variable.value.length(this.dimension);
+        this.selectedIndices.forEach(index => {
+            if (index < 1 || dimLen < index) {
+                throw {message: CoordinateIndexer.DIMENSION_NAMES[this.dimension] + " index " + index + " is out of bounds for the source matrix."};
+            }
+        });
+    }
+
+}
+
+class AllCoordinateIndexer extends CoordinateIndexer {
+
+    protected constructor(variable: Variable, dimension: 1 | 2) {
+        super(variable, dimension, MatlabMath.range(1, variable.value.length(dimension)));
+    }
+
+    public verify() {
+        // always valid
+    }
+
+}
+
+class LogicalCoordinateIndexer extends CoordinateIndexer {
+
+    private readonly logicalSelection: Matrix;
+
+    protected constructor(variable: Variable, dimension: 1 | 2, logicalSelection: Matrix) {
+        let selectedIndices : number[] = [];
+        logicalSelection.data.forEach((logicalValue, i) => logicalValue && selectedIndices.push(i+1)); // i+1 to convert to MATLAB 1 based indexing
+        super(variable, dimension, selectedIndices);
+        this.logicalSelection = logicalSelection;
+    }
+
+    public verify() {
+        // Check that the logical matrix is not larger than the relevant dimension
+        let logicalLength = this.logicalSelection.numel;
+        let dimLen = this.variable.value.length(this.dimension);
+        if (logicalLength > dimLen) {
+            throw {message: "Logical index matrix to select " + CoordinateIndexer.DIMENSION_NAMES[this.dimension] +
+            "s has " + logicalLength + " elements, but source matrix only has " + dimLen +
+            CoordinateIndexer.DIMENSION_NAMES[this.dimension] + "s."};
+        }
+    }
+
+}
+
+
+
+// class CoordinateSubarray extends Subarray {
     
 //     public constructor(variable: Variable, indices: readonly Matrix[]) {
 //         super(variable);
@@ -524,111 +620,7 @@ abstract class Subarray {
 
 // });
 
-// MatrixIndex.Logical = MatrixIndex.extend({
-//     _name: "MatrixIndex.Logical",
 
-//     init : function(variable, indices) {
-//         this.initParent(variable);
-
-//         this.logicalMatrix = indices[0];
-
-//         // Check that the logical matrix is not larger than the one we're indexing
-//         var source = this.source();
-//         if (this.logicalMatrix.length() > source.length()){
-//             throw {message: "Logical index matrix has " + this.logicalMatrix.length()
-//             + " elements, but source matrix only has " + source.length() + " elements."};
-//         }
-//     },
-
-//     isSelected : function(r, c){
-//         var index = this.source().rawIndex(r, c);
-//         return index <= this.logicalMatrix.length() && this.logicalMatrix.getRaw(index) === 1;
-//     },
-//     length : function() {
-//         if (!this.length_mem && this.length_mem !== 0) {
-//             var count = 0;
-//             for (var i = 0; i < this.logicalMatrix.length(); ++i) {
-//                 if (this.logicalMatrix.getRaw0(i)) {
-//                     ++count;
-//                 }
-//             }
-//             this.length_mem = count;
-//         }
-//         return this.length_mem;
-//     },
-//     matrixValue : function(){
-//         var copyData = [];
-//         var source = this.source();
-//         for(var i = 0; i < this.logicalMatrix.length(); ++i) {
-//             if (this.logicalMatrix.getRaw0(i)){
-//                 copyData.push(source.getRaw0(i));
-//             }
-//         }
-//         return Matrix.instance(this.length(), 1, copyData, this.source().dataType(), this.history);
-//     },
-//     assign : function(mat) {
-//         var thisLength = this.length();
-//         var matLength = mat.length();
-//         var source = this.source();
-
-//         if (mat.isScalar()) {
-//             var scalarValue = mat.scalarValue();
-//             for(var i = 0; i < this.logicalMatrix.length(); ++i) {
-//                 if (this.logicalMatrix.getRaw0(i)){
-//                     source.setRaw0(i, scalarValue);
-//                 }
-//             }
-//         }
-//         else if (thisLength === matLength) {
-//             var m = 0;
-//             for(var i = 0; i < this.logicalMatrix.length(); ++i) {
-//                 if (this.logicalMatrix.getRaw0(i)){
-//                     source.setRaw0(i, mat.getRaw0(m));
-//                     ++m;
-//                 }
-//             }
-//         }
-//         else{
-//             throw {message: "The length of the RHS matrix (" + matLength + ") does not match the" +
-//             " number of selected elements in the logically indexed matrix on the LHS (" + thisLength + ")."};
-//         }
-
-//         this.variable().refresh();
-//     },
-
-//     visualize_html : function(dest) {
-//         var source = this.source();
-//         var table = $("<table></table>");
-//         table.addClass("matlab-index");
-//         table.css("background-color", this.color);
-//         for (var r = 1; r <= source.numRows(); ++r) {
-//             var tr = $("<tr></tr>");
-//             table.append(tr);
-//             for (var c = 1; c <= source.numCols(); ++c) {
-//                 var td = $("<td><div class='highlight'></div></td>");
-//                 if (this.isSelected(r, c)){
-//                     td.addClass("selected");
-//                 }
-
-//                 var logicalIndexElem = $("<div></div>");
-//                 logicalIndexElem.addClass("matlab-raw-index");
-//                 logicalIndexElem.html(this.isSelected(r, c) ? "1" : "0");
-//                 td.append(logicalIndexElem);
-
-//                 var temp = $("<div></div>");
-//                 temp.addClass("matlab-scalar");
-//                 var tempSpan = $("<span></span>");
-//                 tempSpan.html(this.originalMatrix.at(r,c));
-//                 temp.append(tempSpan);
-//                 td.append(temp);
-//                 tr.append(td);
-//             }
-
-//         }
-
-//         dest.append(table);
-//     }
-// });
 
 
 
@@ -647,64 +639,18 @@ abstract class Subarray {
 
 
 
-// class LinearIndexer {
-
-//     public static create(variable: Variable, indices: Matrix | ":") {
-//         if (indices === ":") {
-//             return new LinearAllIndexer(variable);
-//         }
-//         else if (indices.dataType === "logical") {
-//             return new LinearLogicalIndexer(variable, indices);
-//         }
-//         else {
-//             return new LinearRegularIndexer(variable, indices);
-//         }
-//     }
-
-//     private readonly variable: Variable;
-
-//     public abstract readonly indices: readonly number[];
-
-//     protected constructor(variable: Variable) {
-//         this.variable = variable;
-//     }
-// }
-
-// class LinearAllIndexer extends LinearIndexer {
-
-//     public readonly indices: readonly number[];
-
-//     public constructor(variable: Variable) {
-//         super(variable);
-//         let indices = [];
-//         for(let i = 1; i < variable.value.numel; ++i) {
-//             indices.push(i);
-//         }
-//         this.indices = indices;
-//     }
-// }
-
-// class LinearRegularIndexer extends LinearIndexer {
-//     public readonly indices: readonly number[];
-
-//     public constructor(variable: Variable, indices: readonly number[]) {
-//         super(variable);
-//         this.indices = cloneArray(indices);
-//     }
-// }
-
 abstract class LinearSubarray extends Subarray {
 
     public static create(variable: Variable, indices: Matrix | ":") {
         if (indices === ":") {
             return new AllLinearSubarray(variable);
         }
-        // else if (indices.dataType === "logical") {
-        //     return new LogicalLinearSubarray(variable, indices);
-        // }
-        // else {
+        else if (indices.dataType === "logical") {
+            return new LogicalLinearSubarray(variable, indices);
+        }
+        else {
             return new RegularLinearSubarray(variable, <Matrix>indices);
-        // }
+        }
     }
 
     protected constructor(variable: Variable) {
@@ -862,84 +808,98 @@ class AllLinearSubarray extends LinearSubarray {
     }
 }
 
-// MatrixIndex.Indices.Colon = MatrixIndex.Indices.extend({
-//     _name: "MatrixIndex.Indices.Colon",
+class LogicalLinearSubarray extends LinearSubarray {
 
-//     init : function(variable/*, indices*/) {
-//         this.initParent(variable);
-//     },
+    public readonly logicalSelection: Matrix;
+    public readonly selectedIndices: readonly number[];
 
-//     isSelected : function(r, c){
-//         return true;
-//     },
-//     length : function() {
-//         return this.source().length();
-//     },
-//     matrixValue : function(){
-//         var copyData = [];
-//         var source = this.source();
-//         for(var i = 0; i < source.length(); ++i) {
-//             copyData.push(source.getRaw0(i));
-//         }
-//         return Matrix.instance(source.length(), 1, copyData, this.source().dataType());
-//     },
-//     assign : function(mat) {
-//         var thisLength = this.length();
-//         var matLength = mat.length();
-//         var source = this.source();
+    public constructor(variable: Variable, logicalSelection: Matrix) {
+        super(variable);
+        this.logicalSelection = logicalSelection;
+        assert(logicalSelection.dataType === "logical");
 
-//         if (mat.isScalar()) {
-//             var scalarValue = mat.scalarValue();
-//             for(var i = 0; i < source.length(); ++i) {
-//                 source.setRaw0(i, scalarValue);
-//             }
-//         }
-//         else if (thisLength === matLength) {
-//             for(var i = 0; i < source.length(); ++i) {
-//                 source.setRaw0(i, mat.getRaw0(i));
-//             }
-//         }
-//         else{
-//             throw {message: "The length of the RHS matrix (" + matLength + ") does not match the" +
-//             " number of indices selected from the matrix on the LHS (" + thisLength + ")."};
-//         }
+        let selectedIndices : number[] = [];
+        logicalSelection.data.forEach((logicalValue, i) => logicalValue && selectedIndices.push(i+1)); // i+1 to convert to MATLAB 1 based indexing
+        this.selectedIndices = selectedIndices;
+    }
+    
+    public verify() {
+        // Check that the logical matrix is not larger than the one we're indexing
+        let logicalLength = this.logicalSelection.numel;
+        let targetLength = this.variable.value.numel;
+        if (logicalLength > targetLength) {
+            throw {message: "Logical index matrix has " + logicalLength
+            + " elements, but source matrix only has " + targetLength + " elements."};
+        }
+    }
 
-//         this.variable().refresh();
-//     },
+    public readValue() : Matrix {
+        let target = this.variable.value;
+        let selectedData = this.selectedIndices.map(i => target.atLinear(i));
 
-//     visualize_html : function(dest) {
-//         var source = this.source();
-//         var table = $("<table></table>");
-//         table.addClass("matlab-index");
-//         table.css("background-color", this.color);
-//         for (var r = 1; r <= source.numRows(); ++r) {
-//             var tr = $("<tr></tr>");
-//             table.append(tr);
-//             for (var c = 1; c <= source.numCols(); ++c) {
-//                 var td = $("<td><div class='highlight'></div></td>");
-//                 if (this.isSelected(r, c)){
-//                     td.addClass("selected");
-//                 }
+        if (this.logicalSelection.rows === 1) {
+            // special case - if the logical index matrix is a row vector, result is shaped as a row vector
+            return new Matrix(1, selectedData.length, selectedData, target.dataType);
+        }
+        else {
+            // general case - shaped as a column vector
+            return new Matrix(selectedData.length, 1, selectedData, target.dataType);
+        }
+    }
+    
+    public assign(rhs: Matrix) {
+        let target = this.variable.value;
 
-//                 var rawIndexElem = $("<div></div>");
-//                 rawIndexElem.addClass("matlab-raw-index");
-//                 rawIndexElem.html(source.rawIndex(r,c));
-//                 td.append(rawIndexElem);
+        if (rhs.isScalar) {
+            let scalarValue = rhs.scalarValue();
+            this.selectedIndices.forEach(selectedIndex => target.setLinear(selectedIndex, scalarValue));
+        }
+        else if (this.selectedIndices.length === rhs.numel) {
+            this.selectedIndices.forEach((selectedIndex, i) => target.setLinear(selectedIndex, rhs.data[i]));
+        }
+        else {
+            throw {message: "The number of elements in the RHS matrix (" + rhs.numel + ") does not match the" +
+            " number of selected elements in the logically indexed matrix on the LHS (" + this.selectedIndices.length + ")."};
+        }
 
-//                 var temp = $("<div></div>");
-//                 temp.addClass("matlab-scalar");
-//                 var tempSpan = $("<span></span>");
-//                 tempSpan.html(this.originalMatrix.at(r,c));
-//                 temp.append(tempSpan);
-//                 td.append(temp);
-//                 tr.append(td);
-//             }
+        this.variable.refresh();
+    }
 
-//         }
+    public visualize_html(elem: JQuery, options?: {[index:string]: any}) {
+        var source = this.variable.value;
+        var table = $("<table></table>");
+        table.addClass("matlab-index");
+        table.css("background-color", source.color);
+        let indicesSet = new Set(this.selectedIndices);
+        for (var r = 1; r <= source.rows; ++r) {
+            var tr = $("<tr></tr>");
+            table.append(tr);
+            for (var c = 1; c <= source.cols; ++c) {
+                var td = $("<td><div class='highlight'></div></td>");
+                let isSelected = indicesSet.has(source.linearIndex(r, c));
+                if (isSelected){
+                    td.addClass("selected");
+                }
 
-//         dest.append(table);
-//     }
-// });
+                var logicalIndexElem = $("<div></div>");
+                logicalIndexElem.addClass("matlab-raw-index");
+                logicalIndexElem.html(isSelected ? "1" : "0");
+                td.append(logicalIndexElem);
+
+                var temp = $("<div></div>");
+                temp.addClass("matlab-scalar");
+                var tempSpan = $("<span></span>");
+                tempSpan.html(""+source.at(r,c));
+                temp.append(tempSpan);
+                td.append(temp);
+                tr.append(td);
+            }
+
+        }
+
+        elem.append(table);
+    }
+}
 
 export class Variable {
 
@@ -1087,7 +1047,7 @@ export class Assignment extends CodeConstruct {
 
         env.setVar(name, rhsResult.value);
 
-        this.lhs.execute(); // HACK: ensure lhs knows about new value
+        this.lhs.execute(); // HACK: ensure lhs knows about new value TODO: revisit this
     }
 
     public visualize_html(elem: JQuery) {
