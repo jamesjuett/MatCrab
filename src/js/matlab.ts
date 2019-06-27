@@ -262,13 +262,13 @@ export class Matrix {
 
     public readonly data: readonly number[];
 
-    public constructor(rows: number, cols: number, data: number[], dataType: DataType) {
+    public constructor(rows: number, cols: number, data: readonly number[], dataType: DataType) {
         this.rows = rows;
         this.cols = cols;
         this.height = rows;
         this.width = cols;
         this.numel = rows * cols;
-        this.data = data;
+        this.data = cloneArray(data) // copy is important, since otherwise internal casting away of readonly on data could cause issues
         this.dataType = dataType;
 
         this.isScalar = rows === 1 && cols === 1;
@@ -310,6 +310,20 @@ export class Matrix {
         row = row - 1;
         col = col - 1;
         (<number[]>this.data)[col * this.rows + row] = value;
+    }
+
+    public fill(value: number) {
+        for(let i = 0; i < this.data.length; ++i) {
+            (<number[]>this.data)[i] = value;
+        }
+    }
+
+    // REQUIRES: data has the same number of elements as the original matrix data
+    public setAll(data: readonly number[]) {
+        assert(this.data.length === data.length, "new data must have same number of elements");
+        for(let i = 0; i < this.data.length; ++i) {
+            (<number[]>this.data)[i] = data[i];
+        }
     }
 
     public length(dimension: 1 | 2) {
@@ -367,8 +381,6 @@ export class Matrix {
 
 abstract class Subarray {
 
-    // @throws {string} If the subarray is not well-formed w.r.t its variable
-    //                  (e.g. subarray specifies out-of-bound indices).
     public static create(variable: Variable, linearIndices: Matrix | ":") : Subarray;
     public static create(variable: Variable, rowIndices: Matrix | ":", colIndices: Matrix | ":") : Subarray;
     public static create(variable: Variable, indices1: Matrix | ":", indices2?: Matrix | ":") {
@@ -383,8 +395,6 @@ abstract class Subarray {
     protected readonly variable: Variable;
     // protected readonly originalMatrix: Matrix;
 
-    // @throws {string} If the subarray is not well-formed w.r.t its variable
-    //                  (e.g. subarray specifies out-of-bound indices).
     protected constructor(variable: Variable) {
         this.variable = variable;
         // this.originalMatrix = variable.value.clone();
@@ -396,7 +406,7 @@ abstract class Subarray {
     public abstract visualize_html(elem: JQuery, options?: {[index:string]: any}): void;
 
     // @throws {string} If the value cannot be determined (e.g. subarray specifies out-of-bound indices).
-    public abstract readonly value : Matrix;
+    public abstract readValue() : Matrix;
 
     // TODO: remove?
     // public abstract readonly dimensions : readonly number[];
@@ -406,7 +416,7 @@ abstract class Subarray {
 
     // @throws {string} If the subarray is not well-formed w.r.t its variable
     //                  (e.g. subarray specifies out-of-bound indices).
-    // public abstract verify() : void;
+    public abstract verify() : void;
 }
 
 // class CoordinatesSubarray extends Subarray {
@@ -686,9 +696,9 @@ abstract class Subarray {
 abstract class LinearSubarray extends Subarray {
 
     public static create(variable: Variable, indices: Matrix | ":") {
-        // if (indices === ":") {
-        //     return new AllLinearSubarray(variable);
-        // }
+        if (indices === ":") {
+            return new AllLinearSubarray(variable);
+        }
         // else if (indices.dataType === "logical") {
         //     return new LogicalLinearSubarray(variable, indices);
         // }
@@ -707,12 +717,16 @@ class RegularLinearSubarray extends LinearSubarray {
 
     public readonly indices: Matrix;
 
-    private _value?: Matrix;
-
     public constructor(variable: Variable, indices: Matrix) {
         super(variable);
         this.indices = indices;
-
+    }
+    
+    // isSelected : function(r, c){
+    //     return this.indexMatrix.contains(this.source().rawIndex(r, c));
+    // },
+    
+    public verify() {
         var sourceLen = this.variable.value.numel;
         this.indices.data.forEach(index => {
             if (index < 1 || sourceLen < index) {
@@ -720,24 +734,16 @@ class RegularLinearSubarray extends LinearSubarray {
             }
         });
     }
-    // isSelected : function(r, c){
-    //     return this.indexMatrix.contains(this.source().rawIndex(r, c));
-    // },
- 
 
-    get value() : Matrix {
-        if (this._value) {
-            return this._value;
-        }
-
+    public readValue() : Matrix {
         let target = this.variable.value;
-        return this._value = new Matrix(
+        return new Matrix(
             this.indices.rows, this.indices.cols,
             this.indices.data.map(index => target.atLinear(index)),
             target.dataType
         );
     }
-
+    
     public assign(value: Matrix) {
         let mat = this.variable.value;
         if (value.isScalar) {
@@ -745,7 +751,6 @@ class RegularLinearSubarray extends LinearSubarray {
             this.indices.data.forEach(index => {
                 mat.setLinear(index, s);
             });
-            return;
         }
         else if (this.indices.numel == value.numel) {
             this.indices.data.forEach((index, valueIndex) => {
@@ -775,6 +780,68 @@ class RegularLinearSubarray extends LinearSubarray {
                 if (indicesSet.has(source.linearIndex(r, c))) {
                     td.addClass("selected");
                 }
+
+                var rawIndexElem = $("<div></div>");
+                rawIndexElem.addClass("matlab-raw-index");
+                rawIndexElem.html("" + source.linearIndex(r,c));
+                td.append(rawIndexElem);
+
+                var temp = $("<div></div>");
+                temp.addClass("matlab-scalar");
+                var tempSpan = $("<span></span>");
+                tempSpan.html("" + source.at(r,c));
+                temp.append(tempSpan);
+                td.append(temp);
+                tr.append(td);
+            }
+        }
+
+        elem.append(table);
+    }
+}
+
+class AllLinearSubarray extends LinearSubarray {
+
+    public constructor(variable: Variable) {
+        super(variable);
+    }
+
+    public verify() {
+        // Always valid
+    }
+
+    public readValue() : Matrix {
+        let original = this.variable.value;
+        return new Matrix(original.numel, 1, original.data, original.dataType);
+    }
+    
+    public assign(value: Matrix) {
+        let mat = this.variable.value;
+        if (value.isScalar) {
+            this.variable.value.fill(value.scalarValue());
+        }
+        else if (this.variable.value.numel == value.numel) {
+            this.variable.value.setAll(value.data);
+        }
+        else{
+            throw "The length of the RHS matrix (" + value.numel + ") does not match the" +
+            " number of indices selected from the matrix on the LHS (" + this.variable.value.numel + ").";
+        }
+
+        this.variable.refresh();
+    }
+
+    public visualize_html(elem: JQuery, options?: {[index:string]: any}) {
+        var source = this.variable.value
+        var table = $("<table></table>");
+        table.addClass("matlab-index");
+        table.css("background-color", source.color);
+        for (var r = 1; r <= source.rows; ++r) {
+            var tr = $("<tr></tr>");
+            table.append(tr);
+            for (var c = 1; c <= source.cols; ++c) {
+                let td = $("<td><div class='highlight'></div></td>");
+                td.addClass("selected");
 
                 var rawIndexElem = $("<div></div>");
                 rawIndexElem.addClass("matlab-raw-index");
@@ -1194,7 +1261,7 @@ export abstract class Expression extends CodeConstruct {
         "unary_exp": (a:ASTNode) => new UnaryOperatorExpression(a),
         // "postfix_exp": PostfixExpression,
         "call_exp": (a:ASTNode) => new IndexExpression(a),
-        // "colon_exp": ColonExpression,
+        "colon_exp": (a:ASTNode) => new ColonExpression(a),
         // "end_exp": EndExpression,
         "integer": (a:ASTNode) => new LiteralExpression(a),
         "float": (a:ASTNode) => new LiteralExpression(a),
@@ -1763,8 +1830,9 @@ class IndexExpression extends Expression {
         
         if (allSuccess(indicesResults)) {
             if (indicesResults.length === 1) {
-                (<Mutable<this>>this).subarrayResult = Subarray.create(vari, indicesResults[0].value);
-                return successResult(this.subarrayResult!.value);
+                (<Mutable<this>>this).subarrayResult = Subarray.create(
+                    vari, this.indicies[0] instanceof ColonExpression ? ":" : indicesResults[0].value);
+                return successResult(this.subarrayResult!.readValue());
             }
             else {
                 // TODO
@@ -1803,14 +1871,16 @@ class IndexExpression extends Expression {
     }
 }
 
-// Expression.Colon = Expression.extend({
-//     _name: "Expression.Colon",
+class ColonExpression extends Expression {
 
-//     evaluate : function() {
-//         this.value = "colon";
-//         return this.value;
-//     }
-// });
+    public evaluate() {
+        return successResult(new Matrix(1,1,[1],"double")); // dummy value
+    }
+
+    protected visualize_expr(elem: JQuery, options?: {[index:string]: any}) {
+        elem.append("<span>:</span>");
+    }
+}
 
 export class LiteralExpression extends Expression {
 
