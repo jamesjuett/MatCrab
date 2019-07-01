@@ -257,6 +257,7 @@ export class Matrix {
     public readonly dataType: DataType;
 
     public readonly isScalar: boolean;
+    public readonly isVector: boolean;
    
     public readonly color: string;
 
@@ -272,6 +273,7 @@ export class Matrix {
         this.dataType = dataType;
 
         this.isScalar = rows === 1 && cols === 1;
+        this.isVector = rows === 1 || cols === 1;
         // this.history = history || MatrixHistory.Raw.instance(this);
 
         this.color = Color.toColor([this.rows, this.height, this.data], Color.LIGHT_LETTERS);
@@ -381,17 +383,6 @@ export class Matrix {
 
 abstract class Subarray {
 
-    public static create(variable: Variable, linearIndices: Matrix | ":") : Subarray;
-    public static create(variable: Variable, rowIndices: Matrix | ":", colIndices: Matrix | ":") : Subarray;
-    public static create(variable: Variable, indices1: Matrix | ":", indices2?: Matrix | ":") {
-        // if (!indices2) {
-            return LinearSubarray.create(variable, indices1);
-        // }
-        // else {
-        //     return new CoordinateSubarray(variable, indices1, indices2);
-        // }
-    }
-
     protected readonly variable: Variable;
     // protected readonly originalMatrix: Matrix;
 
@@ -403,7 +394,24 @@ abstract class Subarray {
         // this.history = MatrixHistory.MatrixIndex.instance(this);
     }
 
-    public abstract visualize_html(elem: JQuery, options?: {[index:string]: any}): void;
+    public visualize_html(elem: JQuery, options?: {[index:string]: any}) {
+        let wrapper = $("<div></div>");
+        wrapper.addClass("matlab-exp-index");
+
+
+        let valueElem = $("<div></div>");
+        this.visualize_selection(valueElem);
+        wrapper.append(valueElem);
+
+        let nameElem = $("<div></div>");
+        nameElem.addClass("matlab-identifier-name");
+        nameElem.html(this.variable.name);
+        wrapper.append(nameElem);
+
+        elem.append(wrapper);
+    }
+
+    protected abstract visualize_selection(elem: JQuery, options?: {[index:string]: any}) : void;
 
     // @throws {string} If the value cannot be determined (e.g. subarray specifies out-of-bound indices).
     public abstract readValue() : Matrix;
@@ -419,24 +427,111 @@ abstract class Subarray {
     public abstract verify() : void;
 }
 
-abstract class CoordinateSubarray extends Subarray {
+class CoordinateSubarray extends Subarray {
 
     public static create(variable: Variable, rowIndices: Matrix | ":", colIndices: Matrix | ":") {
-
-        return new CoordinateSubarray(rowIndices, colIndices);
-        if (indices === ":") {
-            return new AllLinearSubarray(variable);
-        }
-        else if (indices.dataType === "logical") {
-            return new LogicalLinearSubarray(variable, indices);
-        }
-        else {
-            return new RegularLinearSubarray(variable, <Matrix>indices);
-        }
+        return new CoordinateSubarray(variable,
+            CoordinateIndexer.create(variable, 1, rowIndices),
+            CoordinateIndexer.create(variable, 2, colIndices));
     }
 
-    protected constructor(variable: Variable) {
+    public readonly rowIndexer: CoordinateIndexer;
+    public readonly colIndexer: CoordinateIndexer;
+
+    protected constructor(variable: Variable, rowIndexer: CoordinateIndexer, colIndexer: CoordinateIndexer) {
         super(variable);
+        this.rowIndexer = rowIndexer;
+        this.colIndexer = colIndexer;
+    }
+
+    protected visualize_selection(elem: JQuery, options?: {[index:string]: any}) {
+        var source = this.variable.value
+        var table = $("<table></table>");
+        table.addClass("matlab-index");
+        table.css("background-color", source.color);
+        let rowIndicesSet = new Set(this.rowIndexer.selectedIndices);
+        let colIndicesSet = new Set(this.colIndexer.selectedIndices);
+        for (var r = 1; r <= source.rows; ++r) {
+            var tr = $("<tr></tr>");
+            table.append(tr);
+            for (var c = 1; c <= source.cols; ++c) {
+                let td = $("<td><div class='highlight'></div></td>");
+
+                if (rowIndicesSet.has(r) &&
+                    colIndicesSet.has(c)) {
+                    td.addClass("selected");
+                }
+
+                var rawIndexElem = $("<div></div>");
+                rawIndexElem.addClass("matlab-raw-index");
+                rawIndexElem.html("" + source.linearIndex(r,c));
+                td.append(rawIndexElem);
+
+                var temp = $("<div></div>");
+                temp.addClass("matlab-scalar");
+                var tempSpan = $("<span></span>");
+                tempSpan.html("" + source.at(r,c));
+                temp.append(tempSpan);
+                td.append(temp);
+                tr.append(td);
+            }
+        }
+
+        elem.append(table);
+    }
+
+    public readValue() : Matrix {
+        let source = this.variable.value;
+        let data : number[] = [];
+
+        // Extract selection in column-major order
+        this.colIndexer.selectedIndices.forEach((selectedCol) => {
+            this.rowIndexer.selectedIndices.forEach((selectedRow) => {
+                data.push(source.at(selectedRow, selectedCol));
+            })
+        });
+
+        return new Matrix(this.rowIndexer.selectedIndices.length,
+            this.colIndexer.selectedIndices.length, data, source.dataType);
+    }
+
+    public assign(value: Matrix) {
+        let selectionRows = this.rowIndexer.selectedIndices.length;
+        let selectionCols = this.colIndexer.selectedIndices.length;
+        let selectionNumel = selectionRows * selectionCols;
+
+        let target = this.variable.value;
+
+        if (value.isScalar) {
+            this.colIndexer.selectedIndices.forEach((selectedCol, c) => {
+                this.rowIndexer.selectedIndices.forEach((selectedRow, r) => {
+                    target.setAt(selectedRow, selectedCol, value.scalarValue());
+                })
+            });
+        }
+        // Normally, the dimensions of selection and value must match exactly, but
+        // if the selection (not the target) and the value are both vectors, their
+        // number of elements must be the same, but their dimensions might be different.
+        // (e.g. you can assign a row vector to a column selection of the same length)
+        else if (selectionRows === value.rows && selectionCols === value.cols ||
+            ((selectionRows === 1 || selectionCols === 1) && value.isVector && selectionNumel == value.numel)) {
+            this.colIndexer.selectedIndices.forEach((selectedCol, c) => {
+                this.rowIndexer.selectedIndices.forEach((selectedRow, r) => {
+                    target.setAt(selectedRow, selectedCol, value.at(r + 1, c + 1));
+                })
+            });
+        }
+        else {
+            throw "Subscripted assignment dimension mismatch. The left hand side indexing expression" +
+            " selects a " + selectionRows + "x" + selectionCols + " while the right hand side is a " + value.rows + "x" + value.cols + ".";
+        }
+
+        this.variable.refresh();
+    }
+
+    public verify() {
+        this.rowIndexer.verify();
+        this.colIndexer.verify();
     }
 
 }
@@ -445,6 +540,17 @@ abstract class CoordinateIndexer {
 
     public static readonly DIMENSION_NAMES = ["", "row", "column"];
 
+    public static create(variable: Variable, dimension: 1 | 2, selectedIndices: Matrix | ":") {
+        if (selectedIndices === ":") {
+            return new AllCoordinateIndexer(variable, dimension);
+        }
+        else if (selectedIndices.dataType === "logical") {
+            return new LogicalCoordinateIndexer(variable, dimension, selectedIndices);
+        }
+        else {
+            return new RegularCoordinateIndexer(variable, dimension, selectedIndices);
+        }
+    }
 
     public readonly variable: Variable;
     public readonly dimension: 1 | 2;
@@ -462,7 +568,7 @@ abstract class CoordinateIndexer {
 
 class RegularCoordinateIndexer extends CoordinateIndexer {
 
-    protected constructor(variable: Variable, dimension: 1 | 2, selectedIndices: Matrix) {
+    public constructor(variable: Variable, dimension: 1 | 2, selectedIndices: Matrix) {
         super(variable, dimension, selectedIndices.data);
     }
 
@@ -470,7 +576,7 @@ class RegularCoordinateIndexer extends CoordinateIndexer {
         let dimLen = this.variable.value.length(this.dimension);
         this.selectedIndices.forEach(index => {
             if (index < 1 || dimLen < index) {
-                throw {message: CoordinateIndexer.DIMENSION_NAMES[this.dimension] + " index " + index + " is out of bounds for the source matrix."};
+                throw CoordinateIndexer.DIMENSION_NAMES[this.dimension] + " index " + index + " is out of bounds for the source matrix.";
             }
         });
     }
@@ -479,7 +585,7 @@ class RegularCoordinateIndexer extends CoordinateIndexer {
 
 class AllCoordinateIndexer extends CoordinateIndexer {
 
-    protected constructor(variable: Variable, dimension: 1 | 2) {
+    public constructor(variable: Variable, dimension: 1 | 2) {
         super(variable, dimension, MatlabMath.range(1, variable.value.length(dimension)));
     }
 
@@ -493,7 +599,7 @@ class LogicalCoordinateIndexer extends CoordinateIndexer {
 
     private readonly logicalSelection: Matrix;
 
-    protected constructor(variable: Variable, dimension: 1 | 2, logicalSelection: Matrix) {
+    public constructor(variable: Variable, dimension: 1 | 2, logicalSelection: Matrix) {
         let selectedIndices : number[] = [];
         logicalSelection.data.forEach((logicalValue, i) => logicalValue && selectedIndices.push(i+1)); // i+1 to convert to MATLAB 1 based indexing
         super(variable, dimension, selectedIndices);
@@ -505,9 +611,9 @@ class LogicalCoordinateIndexer extends CoordinateIndexer {
         let logicalLength = this.logicalSelection.numel;
         let dimLen = this.variable.value.length(this.dimension);
         if (logicalLength > dimLen) {
-            throw {message: "Logical index matrix to select " + CoordinateIndexer.DIMENSION_NAMES[this.dimension] +
+            throw "Logical index matrix to select " + CoordinateIndexer.DIMENSION_NAMES[this.dimension] +
             "s has " + logicalLength + " elements, but source matrix only has " + dimLen +
-            CoordinateIndexer.DIMENSION_NAMES[this.dimension] + "s."};
+            CoordinateIndexer.DIMENSION_NAMES[this.dimension] + "s.";
         }
     }
 
@@ -521,45 +627,6 @@ class LogicalCoordinateIndexer extends CoordinateIndexer {
 //         super(variable);
 //     }
 
-//     init : function(variable, indices) {
-//         this.initParent(variable);
-
-//         if (indices.length > 2) {
-//             throw {message: "Too many indices for row/column indexing. Only up to 2D arrays are supported. (Maybe you meant to select a matrix of indices but forgot the []?)"};
-//         }
-//         this.selectedRows = indices[0];
-//         this.selectedCols = indices[1];
-
-//         // HACK that makes life much easier
-//         if (this.selectedRows === "colon") {
-//             var allRows = [];
-//             for(var i = 1; i <= this.source().numRows(); ++i) {
-//                 allRows.push(i);
-//             }
-//             this.selectedRows = Matrix.instance(allRows.length, 1, allRows, "integer");
-//         }
-//         if (this.selectedCols === "colon") {
-//             var allCols = [];
-//             for(var i = 1; i <= this.source().numCols(); ++i) {
-//                 allCols.push(i);
-//             }
-//             this.selectedCols = Matrix.instance(allCols.length, 1, allCols, "integer");
-//         }
-
-//         // Check that all indices are within bounds
-//         for(var i = 0; i < this.selectedRows.length(); ++i){
-//             var rowIndex = this.selectedRows.getRaw0(i);
-//             if (rowIndex < 1 || rowIndex > this.source().numRows()){
-//                 throw {message: "Row index " + rowIndex + " is out of bounds."};
-//             }
-//         }
-//         for(var i = 0; i < this.selectedCols.length(); ++i){
-//             var colIndex = this.selectedCols.getRaw0(i);
-//             if (colIndex < 1 || colIndex > this.source().numCols()){
-//                 throw {message: "Column index " + colIndex + " is out of bounds."};
-//             }
-//         }
-//     },
 //     isSelected : function(r, c){
 //         return (this.selectedRows === "colon" || this.selectedRows.contains(r)) &&
 //             (this.selectedCols === "colon" || this.selectedCols.contains(c));
@@ -676,7 +743,7 @@ class RegularLinearSubarray extends LinearSubarray {
         var sourceLen = this.variable.value.numel;
         this.indices.data.forEach(index => {
             if (index < 1 || sourceLen < index) {
-                throw {message: "Index " + index + " is out of bounds for the source matrix."};
+                throw "Index " + index + " is out of bounds for the source matrix.";
             }
         });
     }
@@ -711,7 +778,7 @@ class RegularLinearSubarray extends LinearSubarray {
         this.variable.refresh();
     }
 
-    public visualize_html(elem: JQuery, options?: {[index:string]: any}) {
+    protected visualize_selection(elem: JQuery, options?: {[index:string]: any}) {
         var source = this.variable.value
         var table = $("<table></table>");
         table.addClass("matlab-index");
@@ -777,7 +844,7 @@ class AllLinearSubarray extends LinearSubarray {
         this.variable.refresh();
     }
 
-    public visualize_html(elem: JQuery, options?: {[index:string]: any}) {
+    protected visualize_selection(elem: JQuery, options?: {[index:string]: any}) {
         var source = this.variable.value
         var table = $("<table></table>");
         table.addClass("matlab-index");
@@ -828,8 +895,8 @@ class LogicalLinearSubarray extends LinearSubarray {
         let logicalLength = this.logicalSelection.numel;
         let targetLength = this.variable.value.numel;
         if (logicalLength > targetLength) {
-            throw {message: "Logical index matrix has " + logicalLength
-            + " elements, but source matrix only has " + targetLength + " elements."};
+            throw "Logical index matrix has " + logicalLength
+            + " elements, but source matrix only has " + targetLength + " elements.";
         }
     }
 
@@ -858,14 +925,14 @@ class LogicalLinearSubarray extends LinearSubarray {
             this.selectedIndices.forEach((selectedIndex, i) => target.setLinear(selectedIndex, rhs.data[i]));
         }
         else {
-            throw {message: "The number of elements in the RHS matrix (" + rhs.numel + ") does not match the" +
-            " number of selected elements in the logically indexed matrix on the LHS (" + this.selectedIndices.length + ")."};
+            throw "The number of elements in the RHS matrix (" + rhs.numel + ") does not match the" +
+            " number of selected elements in the logically indexed matrix on the LHS (" + this.selectedIndices.length + ").";
         }
 
         this.variable.refresh();
     }
 
-    public visualize_html(elem: JQuery, options?: {[index:string]: any}) {
+    protected visualize_selection(elem: JQuery, options?: {[index:string]: any}) {
         var source = this.variable.value;
         var table = $("<table></table>");
         table.addClass("matlab-index");
@@ -1004,9 +1071,9 @@ export abstract class CodeConstruct {
         if (ast["what"] === "assignment") {
             return new Assignment(ast);
         }
-        // else if (ast["what"] === "indexed_assignment") {
-        //     return new IndexedAssignment(ast);
-        // }
+        else if (ast["what"] === "indexed_assignment") {
+            return new IndexedAssignment(ast);
+        }
         else {
             return Expression.create(ast);
         }
@@ -1018,69 +1085,12 @@ export abstract class CodeConstruct {
         this.ast = ast;
     }
 
-    public abstract execute(): void;
+    public abstract execute(): ExecutedExpressionResult;
     public abstract visualize_html(elem: JQuery, options?: {[index:string]: any}): void;
 
 }
 
-export class Assignment extends CodeConstruct {
-    
-    public readonly rhs: Expression;
-    public readonly lhs: IdentifierExpression;
 
-    constructor(ast: ASTNode) {
-        super(ast);
-        this.rhs = Expression.create(ast["exp"]);
-        this.lhs = <IdentifierExpression>Expression.create(ast["identifier"])
-    }
-
-    public execute() {
-
-        let rhsResult = this.rhs.execute();
-
-        if (rhsResult.kind !== "success") {
-            return;
-        }
-
-        let env = Environment.global;
-        let name = this.lhs.name;
-
-        env.setVar(name, rhsResult.value);
-
-        this.lhs.execute(); // HACK: ensure lhs knows about new value TODO: revisit this
-    }
-
-    public visualize_html(elem: JQuery) {
-        let wrapper = $("<div></div>");
-
-        let top = $("<div></div>");
-        top.addClass("matlab-assignment");
-        top.append(this.lhs.name);
-
-        top.append("&nbsp;=&nbsp;");
-
-        let rhsElem = $("<div></div>");
-        this.rhs.visualize_html(rhsElem);
-        top.append(rhsElem);
-
-        wrapper.append(top);
-
-        let bottom = $("<div></div>");
-        bottom.addClass("matlab-assignment-result");
-        bottom.append(this.lhs.name);
-        bottom.append(" is now ");
-
-
-        let valueElem = $("<div></div>");
-        this.lhs.visualize_html(valueElem);
-        bottom.append(valueElem);
-
-        wrapper.append(bottom);
-
-
-        elem.append(wrapper);
-    }
-}
 
 // CodeConstruct.IndexedAssignment = CodeConstruct.extend({
 //     _name : "CodeConstruct.IndexedAssignment",
@@ -1245,7 +1255,7 @@ export abstract class Expression extends CodeConstruct {
     //     }
     // }
 
-    public execute() : ExecutedExpressionResult{
+    public execute() : ExecutedExpressionResult {
         let res = this.evaluate();
         this.setResult(res);
         return res;
@@ -1265,6 +1275,7 @@ export abstract class Expression extends CodeConstruct {
             bottom.addClass("matlab-exp-bottom");
             var errElem = $("<div></div>");
             errElem.addClass("matlab-exp-error");
+            console.log(this.result.error.message);
             errElem.html(this.result.error.message);
             bottom.append(errElem);
             elem.append(bottom);
@@ -1273,6 +1284,158 @@ export abstract class Expression extends CodeConstruct {
 
     protected abstract visualize_expr(elem: JQuery, options?: {[index:string]: any}): void;
 
+}
+
+// TODO: lhs should not use IdentifierExpression? should just be name, I think
+export class Assignment extends CodeConstruct {
+    
+    public readonly rhs: Expression;
+    public readonly lhs: IdentifierExpression;
+
+    constructor(ast: ASTNode) {
+        super(ast);
+        this.lhs = <IdentifierExpression>Expression.create(ast["identifier"])
+        this.rhs = Expression.create(ast["exp"]);
+    }
+
+    public execute() {
+
+        let rhsResult = this.rhs.execute();
+
+        if (rhsResult.kind !== "success") {
+            return rhsResult;
+        }
+
+        let env = Environment.global;
+        let name = this.lhs.name;
+
+        env.setVar(name, rhsResult.value);
+
+        return rhsResult;
+        this.lhs.execute(); // HACK: ensure lhs knows about new value TODO: revisit this
+    }
+
+    public visualize_html(elem: JQuery) {
+        let wrapper = $("<div></div>");
+
+        let top = $("<div></div>");
+        top.addClass("matlab-assignment");
+        top.append(this.lhs.name);
+
+        top.append("&nbsp;=&nbsp;");
+
+        let rhsElem = $("<div></div>");
+        this.rhs.visualize_html(rhsElem);
+        top.append(rhsElem);
+
+        wrapper.append(top);
+
+        let bottom = $("<div></div>");
+        bottom.addClass("matlab-assignment-result");
+        bottom.append(this.lhs.name);
+        bottom.append(" is now ");
+
+
+        let valueElem = $("<div></div>");
+        this.lhs.visualize_html(valueElem);
+        bottom.append(valueElem);
+
+        wrapper.append(bottom);
+
+
+        elem.append(wrapper);
+    }
+}
+
+// TODO: reduce code duplication between IndexedAssignment and IndexExpression
+class IndexedAssignment extends Expression {
+    
+    public readonly targetName: string;
+    public readonly indicies: readonly Expression[];
+    public readonly rhs: Expression;
+    
+    public readonly subarrayResult?: Subarray;
+
+    public constructor(ast: ASTNode) {
+        super(ast);
+        // TODO: may be nice to change grammar here to not have a nested identifier
+        this.targetName = ast["lhs"]["receiver"]["identifier"];
+        this.indicies = ast["lhs"]["args"].map((i:ASTNode) => Expression.create(i));
+        this.rhs = Expression.create(ast["rhs"]);
+    }
+
+    // TODO: change to execute
+    public evaluate() : ExecutedExpressionResult {
+        let vari = Environment.global.getVar(this.targetName);
+        if (!vari) {
+            return errorResult(new MatlabError(this, "Sorry, I can't find a variable named " + this.targetName));
+        }
+
+        let target = vari.value;
+
+        if (this.indicies.length > 2) {
+            return errorResult(new MatlabError(this, "Sorry, indexing in more that two dimensions is not currently supported."));
+        }
+
+        let rhsResult = this.rhs.execute();
+
+        if (rhsResult.kind !== "success") {
+            return rhsResult;
+        }
+
+        let indicesResults = this.indicies.map((index, i) => {
+            Environment.global.pushEndValue(target.length(<1|2>(i+1)));
+            let res = index.execute();
+            Environment.global.popEndValue();
+            return res;
+        });
+        
+        if (!allSuccess(indicesResults)) {
+            return indicesResults.find(r => {return r.kind !== "success";})!;
+        }
+
+        if (indicesResults.length === 1) {
+            (<Mutable<this>>this).subarrayResult = LinearSubarray.create(
+                vari, this.indicies[0] instanceof ColonExpression ? ":" : indicesResults[0].value);
+        }
+        else {
+            (<Mutable<this>>this).subarrayResult = CoordinateSubarray.create(vari,
+                this.indicies[0] instanceof ColonExpression ? ":" : indicesResults[0].value,
+                this.indicies[1] instanceof ColonExpression ? ":" : indicesResults[1].value);
+        }
+
+        try {
+            this.subarrayResult!.verify();
+            this.subarrayResult!.assign(rhsResult.value);
+            return successResult(rhsResult.value);
+        }
+        catch(msg) {
+            return errorResult(new MatlabError(this, msg));
+        }
+
+    }
+
+    protected visualize_expr(elem: JQuery, options?: {[index:string]: any}) {
+
+        elem.addClass("matlab-assignment");
+        var lhsElem = $("<div></div>");
+        if (this.subarrayResult) {
+            this.subarrayResult.visualize_html(lhsElem);
+            
+        }
+        else {
+            //TODO
+        }
+
+        elem.append(lhsElem);
+
+        elem.append("&nbsp;=&nbsp;");
+
+        var rhsElem = $("<div></div>");
+        this.rhs.visualize_html(rhsElem);
+        elem.append(rhsElem);
+        
+    }
 }
 
 class MatrixExpression extends Expression {
@@ -1749,7 +1912,7 @@ export class UnaryOperatorExpression extends Expression {
 }
 
 
-// TODO: if indexed matrix is modified, should still show original version
+// TODO: This whole thing needs a bit of review
 class IndexExpression extends Expression {
 
     // currentIndexedVariable : null
@@ -1779,7 +1942,6 @@ class IndexExpression extends Expression {
             return errorResult(new MatlabError(this, "Sorry, indexing in more that two dimensions is not currently supported."));
         }
 
-        assert(this.indicies.length <= 2, "More than 2D indexing not currently supported");
         let indicesResults = this.indicies.map((index, i) => {
             Environment.global.pushEndValue(target.length(<1|2>(i+1)));
             let res = index.execute();
@@ -1788,46 +1950,37 @@ class IndexExpression extends Expression {
         });
 
         
-        if (allSuccess(indicesResults)) {
-            if (indicesResults.length === 1) {
-                (<Mutable<this>>this).subarrayResult = Subarray.create(
-                    vari, this.indicies[0] instanceof ColonExpression ? ":" : indicesResults[0].value);
-                return successResult(this.subarrayResult!.readValue());
-            }
-            else {
-                // TODO
-                return <never>assert(false);
-            }
-        }
-        else {
+        if (!allSuccess(indicesResults)) {
             return indicesResults.find(r => {return r.kind !== "success";})!;
         }
 
-        
+        if (indicesResults.length === 1) {
+            (<Mutable<this>>this).subarrayResult = LinearSubarray.create(
+                vari, this.indicies[0] instanceof ColonExpression ? ":" : indicesResults[0].value);
+        }
+        else {
+            (<Mutable<this>>this).subarrayResult = CoordinateSubarray.create(vari,
+                this.indicies[0] instanceof ColonExpression ? ":" : indicesResults[0].value,
+                this.indicies[1] instanceof ColonExpression ? ":" : indicesResults[1].value);
+        }
+
+        try {
+            this.subarrayResult!.verify();
+            return successResult(this.subarrayResult!.readValue());
+        }
+        catch(msg) {
+            return errorResult(new MatlabError(this, msg));
+        }
 
     }
 
     protected visualize_expr(elem: JQuery, options?: {[index:string]: any}) {
-        var wrapper = $("<div></div>");
-        wrapper.addClass("matlab-exp-index");
-
-
-        var valueElem = $("<div></div>");
         if (this.subarrayResult) {
-            this.subarrayResult.visualize_html(valueElem);
+            this.subarrayResult.visualize_html(elem);
         }
         else {
             // TODO
         }
-        wrapper.append(valueElem);
-
-        var nameElem = $("<div></div>");
-        nameElem.addClass("matlab-identifier-name");
-        nameElem.html(this.targetName);
-        wrapper.append(nameElem);
-
-
-        elem.append(wrapper);
     }
 }
 
