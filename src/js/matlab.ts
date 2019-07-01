@@ -11,13 +11,6 @@ export interface Visualizable {
 
 export type DataType = "double" | "logical";
 
-export abstract class MatrixHistory implements Visualizable {
-
-    public readonly color = Color.randomColor();
-
-    public abstract visualize_html(containingElem: JQuery) : void;
-}
-
 export class MatlabError {
     public readonly message: string;
     public readonly construct: CodeConstruct;
@@ -28,205 +21,6 @@ export class MatlabError {
     }
 }
 
-// class AppendRows extends MatrixHistory {
-    
-//     public readonly rows: Visualizable[];
-
-//     public constructor(rows : Visualizable[]) {
-//         super();
-//         this.rows = rows;
-//     }
-
-//     public visualize_html(containingElem: JQuery) {
-//         let table = $("<table></table>");
-//         table.addClass("matlab-table");
-//         table.css("background-color", this.color);
-
-//         let rows = this.rows;
-//         for (let i = 0; i < rows.length; ++i) {
-//             let tr = $("<tr></tr>");
-//             let td = $("<td></td>");
-//             table.append(tr);
-//             tr.append(td);
-//             rows[i].visualize_html(td);
-//         }
-//         containingElem.append(table);
-//     }
-// }
-
-// class AppendCols extends MatrixHistory {
-    
-//     public readonly cols: Visualizable[];
-
-//     public constructor(cols : Visualizable[]) {
-//         super();
-//         this.cols = cols;
-//     }
-
-//     public visualize_html(containingElem: JQuery) {
-//         let cols = this.cols;
-//         if (cols.length == 1) {
-//             // Single element row - just visualize the element, not as a row
-//             cols[0].visualize_html(containingElem);
-//         }
-//         else {
-//             let table = $("<table></table>");
-//             table.addClass("matlab-table");
-//             table.css("background-color", this.color);
-//             let tr = $("<tr></tr>");
-//             table.append(tr);
-
-//             for (let i = 0; i < cols.length; ++i) {
-//                 let td = $("<td></td>");
-//                 tr.append(td);
-
-//                 if(cols[i].isScalar()){
-//                     td.html(cols[i].scalarValue());
-//                 }
-//                 else{
-//                     cols[i].visualize_html(td);
-//                 }
-//             }
-//             dest.append(table);
-//         }
-//     }
-// });
-
-
-// MatrixHistory.Range = MatrixHistory.extend({
-//     _name: "MatrixHistory.Range",
-
-//     init : function(range) {
-//         this.initParent();
-//         this.range = range;
-//     },
-
-//     visualize_html : function(dest) {
-//         var range = this.range;
-//         var table = $("<table></table>");
-//         table.append('<svg><defs><marker id="arrow" markerWidth="10" markerHeight="10" refx="9" refy="3" orient="auto" markerUnits="strokeWidth"> <path d="M0,0 L0,6 L9,3 z" fill="#000" /> </marker> </defs><g transform="translate(-10,0)"><line x1="22" y1="25" x2="100%" y2="25" stroke="#000" stroke-width="1" marker-end="url(#arrow)" /></g> </svg>');
-
-//         table.addClass("matlab-range");
-//         table.css("background-color", this.color);
-//         var tr = $("<tr></tr>");
-//         table.append(tr);
-
-//         for (var i = 0; i < range.length; ++i) {
-//             var td = $("<td></td>");
-//             tr.append(td);
-
-//             // NOTE: The numbers themselves in a range are calculated and thus
-//             //       have a history, although in the future it may be useful to
-//             //       somehow show the history of the start, step, and end.
-// //                    range[i].visualize_html(td);
-//             var temp = $("<div></div>");
-//             temp.addClass("matlab-scalar");
-//             var tempSpan = $("<span></span>");
-//             var num = Matrix.formatNumber(range[i]);
-//             if (num.length > 3) {
-//                 temp.addClass("double");
-//             }
-//             tempSpan.html(num);
-//             temp.append(tempSpan);
-//             td.append(temp);
-//         }
-//         dest.append(table);
-//     }
-// });
-
-// MatrixHistory.Scalar = MatrixHistory.extend({
-//     _name: "MatrixHistory.Scalar",
-
-//     init : function(value) {
-//         this.initParent();
-//         this.value = value;
-//     },
-
-//     visualize_html : function(dest) {
-//         var temp = $("<div></div>");
-//         temp.addClass("matlab-scalar");
-//         var tempSpan = $("<span></span>");
-//         var num = Matrix.formatNumber(this.value);
-//         if (num.length > 3) {
-//             temp.addClass("double");
-//         }
-//         tempSpan.html(num);
-//         temp.append(tempSpan);
-//         dest.append(temp);
-//     }
-// });
-
-// MatrixHistory.Raw = MatrixHistory.extend({
-//     _name: "MatrixHistory.Raw",
-
-//     init : function(matrix) {
-//         this.initParent();
-//         this.matrix = matrix;
-//     },
-
-//     visualize_html : function(dest) {
-//         var table = $("<table></table>");
-//         table.addClass("matlab-table");
-//         table.css("background-color", this.color);
-//         for (var r = 1; r <= this.matrix.numRows(); ++r) {
-//             var tr = $("<tr></tr>");
-//             table.append(tr);
-//             for (var c = 1; c <= this.matrix.numCols(); ++c) {
-//                 var td = $("<td></td>");
-//                 var temp = $("<div></div>");
-//                 temp.addClass("matlab-scalar");
-//                 var tempSpan = $("<span></span>");
-//                 tempSpan.html(this.matrix.at(r,c));
-//                 temp.append(tempSpan);
-//                 td.html(temp);
-//                 tr.append(td);
-//             }
-
-//         }
-
-//         dest.append(table);
-//     }
-// });
-
-// export class MatrixIndexHistory extends MatrixHistory {
-
-//     private readonly matrixIndex: MatrixIndex;
-//     private readonly originalMatrix: Matrix;
-
-//     public constructor(matrixIndex: MatrixIndex) {
-//         super();
-//         this.matrixIndex = matrixIndex;
-//         this.originalMatrix = this.matrixIndex.source().clone();
-//     }
-
-//     public visualize_html(containingElem: JQuery) {
-//         let source = this.matrixIndex.source();
-//         let table = $("<table></table>");
-//         table.addClass("matlab-index");
-//         table.css("background-color", this.color);
-
-//         for (let r = 1; r <= source.numRows(); ++r) {
-//             let tr = $("<tr></tr>");
-//             table.append(tr);
-//             for (let c = 1; c <= source.numCols(); ++c) {
-//                 let td = $("<td><div class='highlight'></div></td>");
-//                 if (this.matrixIndex.isSelected(r, c)){
-//                     td.addClass("selected");
-//                 }
-//                 let temp = $("<div></div>");
-//                 temp.addClass("matlab-scalar");
-//                 let tempSpan = $("<span></span>");
-//                 tempSpan.html(this.originalMatrix.at(r,c));
-//                 temp.append(tempSpan);
-//                 td.append(temp);
-//                 tr.append(td);
-//             }
-
-//         }
-
-//         containingElem.append(table);
-//     }
-// }
 
 
 
@@ -274,7 +68,6 @@ export class Matrix {
 
         this.isScalar = rows === 1 && cols === 1;
         this.isVector = rows === 1 || cols === 1;
-        // this.history = history || MatrixHistory.Raw.instance(this);
 
         this.color = Color.toColor([this.rows, this.height, this.data], Color.LIGHT_LETTERS);
     }
@@ -391,7 +184,6 @@ abstract class Subarray {
         // this.originalMatrix = variable.value.clone();
 
         // this.color = this.originalMatrix.color;
-        // this.history = MatrixHistory.MatrixIndex.instance(this);
     }
 
     public visualize_html(elem: JQuery, options?: {[index:string]: any}) {
@@ -515,9 +307,12 @@ class CoordinateSubarray extends Subarray {
         // (e.g. you can assign a row vector to a column selection of the same length)
         else if (selectionRows === value.rows && selectionCols === value.cols ||
             ((selectionRows === 1 || selectionCols === 1) && value.isVector && selectionNumel == value.numel)) {
+            let i = 1;
             this.colIndexer.selectedIndices.forEach((selectedCol, c) => {
                 this.rowIndexer.selectedIndices.forEach((selectedRow, r) => {
-                    target.setAt(selectedRow, selectedCol, value.at(r + 1, c + 1));
+                    // Note: expression below cannot use value.at(r + 1, c + 1) since this won't work
+                    // for vectors that have rows/cols flipped
+                    target.setAt(selectedRow, selectedCol, value.atLinear(i++));
                 })
             });
         }
