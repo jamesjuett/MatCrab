@@ -6,7 +6,7 @@ import { Mutable, Color, assert, cloneArray, MatlabMath } from "./util/util";
 
 
 export interface Visualizable {
-    visualize_html(containingElem: JQuery, options?: {[index:string]: any}) : void
+    visualize_html(options?: {[index:string]: any}) : string
 }
 
 export type DataType = "double" | "logical";
@@ -21,7 +21,7 @@ export class MatlabError {
     }
 }
 
-export class Matrix {
+export class Matrix implements Visualizable {
 
     //Static functions
     // TODO: Should this really be a static function of matrix?
@@ -139,7 +139,7 @@ export class Matrix {
         return this.data.indexOf(value) !== -1;
     }
 
-    public visualize_html(containingElem: JQuery, options?: {[index:string]: any}) {
+    public visualize_html(options?: {[index:string]: any}) : string {
 
         let table = $("<table></table>");
         table.addClass("matlab-table");
@@ -166,7 +166,7 @@ export class Matrix {
             }
         }
 
-        containingElem.append(table);
+        return table[0].outerHTML;
     }
 
 }
@@ -190,7 +190,7 @@ abstract class Subarray {
     //     elem.append(wrapper);
     // }
 
-    public abstract visualize_selection(elem: JQuery, matrix: Matrix) : void;
+    public abstract visualize_selection(matrix: Matrix) : string;
 
     // @throws {string} If the value cannot be determined (e.g. subarray specifies out-of-bound indices).
     public abstract readValue(source: Matrix) : Matrix;
@@ -223,7 +223,7 @@ class CoordinateSubarray extends Subarray {
         this.colIndexer = colIndexer;
     }
 
-    public visualize_selection(elem: JQuery, matrix: Matrix) {
+    public visualize_selection(matrix: Matrix) {
         var table = $("<table></table>");
         table.addClass("matlab-index");
         table.css("background-color", matrix.color);
@@ -255,7 +255,7 @@ class CoordinateSubarray extends Subarray {
             }
         }
 
-        elem.append(table);
+        return table[0].outerHTML;
     }
 
     public readValue(source: Matrix) : Matrix {
@@ -475,7 +475,7 @@ class RegularLinearSubarray extends LinearSubarray {
         }
     }
 
-    public visualize_selection(elem: JQuery, mat: Matrix) {
+    public visualize_selection(mat: Matrix) {
         var table = $("<table></table>");
         table.addClass("matlab-index");
         table.css("background-color", mat.color);
@@ -505,7 +505,7 @@ class RegularLinearSubarray extends LinearSubarray {
             }
         }
 
-        elem.append(table);
+        return table[0].outerHTML;
     }
 }
 
@@ -532,7 +532,7 @@ class AllLinearSubarray extends LinearSubarray {
         }
     }
 
-    public visualize_selection(elem: JQuery, mat: Matrix) {
+    public visualize_selection(mat: Matrix) {
         var table = $("<table></table>");
         table.addClass("matlab-index");
         table.css("background-color", mat.color);
@@ -558,7 +558,7 @@ class AllLinearSubarray extends LinearSubarray {
             }
         }
 
-        elem.append(table);
+        return table[0].outerHTML;
     }
 }
 
@@ -615,7 +615,7 @@ class LogicalLinearSubarray extends LinearSubarray {
         }
     }
 
-    public visualize_selection(elem: JQuery, mat: Matrix) {
+    public visualize_selection(mat: Matrix) {
         var table = $("<table></table>");
         table.addClass("matlab-index");
         table.css("background-color", mat.color);
@@ -646,11 +646,11 @@ class LogicalLinearSubarray extends LinearSubarray {
 
         }
 
-        elem.append(table);
+        return table[0].outerHTML;
     }
 }
 
-export class Variable {
+export class Variable implements Visualizable {
 
     public readonly name: string;
     public readonly value: Matrix;
@@ -686,8 +686,8 @@ export class Variable {
     //     return this.value.matrixValue();
     // }
 
-    public visualize_html(elem: JQuery) {
-        return this.value.visualize_html(elem);
+    visualize_html(options?: {[index:string]: any}) : string {
+        return this.value.visualize_html(options);
     }
 }
 
@@ -741,7 +741,7 @@ export class Environment {
 
 export type ASTNode = any;
 
-export abstract class CodeConstruct {
+export abstract class CodeConstruct implements Visualizable {
 
 
     // TODO: move somewhere appropriate
@@ -768,7 +768,7 @@ export abstract class CodeConstruct {
     }
 
     public abstract execute(): ExecutedExpressionResult;
-    public abstract visualize_html(elem: JQuery, options?: {[index:string]: any}): void;
+    public abstract visualize_html(options?: {[index:string]: any}): string;
 
 }
 
@@ -945,26 +945,26 @@ export abstract class Expression extends CodeConstruct {
 
     protected abstract evaluate() : ExecutedExpressionResult;
 
-    public visualize_html(elem: JQuery, options?: {[index:string]: any}) {
-        var top = $('<div></div>').appendTo(elem);
-        let expr = $('<div class="matlab-exp"></div>').appendTo(top);
-        this.visualize_expr(expr, options);
+    public visualize_html(options?: {[index:string]: any}) : string {
+        let elem = $("<div></div>");
+        let expr = $(`<div class="matlab-exp">${this.visualize_expr(options)}</div>`).appendTo(elem);
         
         if (this.result.kind === "error" && this.result.error.construct === this) {
             expr.append(CodeConstruct.createRedX());
 
-            var bottom = $("<div></div>");
-            bottom.addClass("matlab-exp-bottom");
-            var errElem = $("<div></div>");
-            errElem.addClass("matlab-exp-error");
-            console.log(this.result.error.message);
-            errElem.html(this.result.error.message);
-            bottom.append(errElem);
+            let bottom = $(`
+            <div class="matlab-exp-bottom">
+                <div class="matlab-exp-error">
+                    ${this.result.error.message}
+                </div>
+            </div>`);
             elem.append(bottom);
         }
+
+        return elem[0].outerHTML;
     }
 
-    protected abstract visualize_expr(elem: JQuery, options?: {[index:string]: any}): void;
+    protected abstract visualize_expr(options?: {[index:string]: any}): string;
 
 }
 
@@ -973,6 +973,8 @@ export class Assignment extends CodeConstruct {
     
     public readonly rhs: Expression;
     public readonly lhs: IdentifierExpression;
+
+    public readonly updatedValue?: Matrix;
 
     constructor(ast: ASTNode) {
         super(ast);
@@ -992,40 +994,29 @@ export class Assignment extends CodeConstruct {
         let name = this.lhs.name;
 
         env.setVar(name, rhsResult.value);
+        (<Mutable<this>>this).updatedValue = rhsResult.value;
 
         return rhsResult;
-        this.lhs.execute(); // HACK: ensure lhs knows about new value TODO: revisit this
     }
 
-    public visualize_html(elem: JQuery) {
-        let wrapper = $("<div></div>");
+    public visualize_html() {
+        let elem = $("<div></div>");
+        let top = 
+        `<div class="matlab-assignment">
+            ${this.lhs.name}
+            &nbsp;=&nbsp;
+            ${this.rhs.visualize_html()}
+        </div>`;
+        elem.append(top);
 
-        let top = $("<div></div>");
-        top.addClass("matlab-assignment");
-        top.append(this.lhs.name);
+        if (this.updatedValue) {
+            let bottom = `<div class="matlab-assignment-result">
+                ${this.lhs.name} is now ${this.updatedValue}
+            </div>`;
+            elem.append(bottom);
+        }
 
-        top.append("&nbsp;=&nbsp;");
-
-        let rhsElem = $("<div></div>");
-        this.rhs.visualize_html(rhsElem);
-        top.append(rhsElem);
-
-        wrapper.append(top);
-
-        let bottom = $("<div></div>");
-        bottom.addClass("matlab-assignment-result");
-        bottom.append(this.lhs.name);
-        bottom.append(" is now ");
-
-
-        let valueElem = $("<div></div>");
-        this.lhs.visualize_html(valueElem);
-        bottom.append(valueElem);
-
-        wrapper.append(bottom);
-
-
-        elem.append(wrapper);
+        return elem[0].outerHTML;
     }
 }
 
@@ -1103,55 +1094,45 @@ class IndexedAssignment extends Expression {
 
     protected visualize_expr(elem: JQuery, options?: {[index:string]: any}) {
 
-        elem.addClass("matlab-assignment");
-        var lhsElem = $("<div></div>");
-
-        let wrapper = $("<div></div>");
-        wrapper.addClass("matlab-exp-index");
-
-
-        let valueElem = $("<div></div>");
+        let valueHtml;
         
         if (this.originalMatrix && this.subarrayResult) {
-            this.subarrayResult.visualize_selection(valueElem, this.originalMatrix);
+            valueHtml = this.subarrayResult.visualize_selection(this.originalMatrix);
             
         }
         else {
             //TODO
+            valueHtml = "";
         }
-
-        wrapper.append(valueElem);
-
-        let nameElem = $("<div></div>");
-        nameElem.addClass("matlab-identifier-name");
-        nameElem.html(this.targetName);
-        wrapper.append(nameElem);
-
-        lhsElem.append(wrapper);
-
-        elem.append(lhsElem);
-
-        elem.append("&nbsp;=&nbsp;");
-
-        var rhsElem = $("<div></div>");
-        this.rhs.visualize_html(rhsElem);
-        elem.append(rhsElem);
+        
+        let top = $(`
+        <div>
+            <div class="matlab-assignment">
+                <div>
+                    <div class="matlab-exp-index">
+                        ${valueHtml}
+                        <div class="matlab-identifier-name">
+                            ${this.targetName}
+                        </div>
+                    </div>
+                    
+                </div>
+                &nbsp;=&nbsp;
+                ${this.rhs.visualize_html()}
+            </div>
+        </div>`);
+        elem.append(top);
         
         if(this.updatedMatrix) {
-            let bottom = $("<div></div>");
-            bottom.addClass("matlab-assignment-result");
-            bottom.append(this.targetName);
-            bottom.append(" is now ");
-    
-    
-            let updatedValueElem = $("<div></div>");
-            this.updatedMatrix.visualize_html(updatedValueElem);
-            bottom.append(updatedValueElem);
-    
-            wrapper.append(bottom);
-        }
 
-        elem.append(wrapper);
+            let bottom = $(`
+            <div class="matlab-assignment-result">
+                ${this.targetName} is now ${this.updatedMatrix.visualize_html()}
+            </div>`);
+
+            elem.append(bottom);
+        }
+        return elem[0].outerHTML;
     }
 }
 
@@ -1200,7 +1181,7 @@ class MatrixExpression extends Expression {
             mats.some(m => m.dataType === "double") ? "double" : mats[0].dataType));
     }
 
-    public visualize_expr(elem: JQuery) {
+    public visualize_expr() {
         var table = $("<table></table>");
         table.addClass("matlab-table");
         let color = Color.WHITE;
@@ -1215,9 +1196,9 @@ class MatrixExpression extends Expression {
             table.append(tr);
             var td = $("<td></td>");
             tr.append(td);
-            rows[i].visualize_html(td, {contained: true});
+            td.html(rows[i].visualize_html({contained: true}));
         }
-        elem.append(table);
+        return table[0].outerHTML;
     }
 }
 
@@ -1261,11 +1242,11 @@ class RowExpression extends Expression {
         ));
     }
 
-    public visualize_expr(elem: JQuery) {
+    public visualize_expr() {
         var cols = this.cols;
         if (cols.length == 1) {
             // Single element row - just visualize the element, not as a row
-            cols[0].visualize_html(elem);
+            return cols[0].visualize_html();
         }
         else {
             var table = $("<table></table>");
@@ -1282,9 +1263,9 @@ class RowExpression extends Expression {
                 var td = $("<td></td>");
                 tr.append(td);
                 var col = cols[i];
-                cols[i].visualize_html(td,{contained: true});
+                td.html(cols[i].visualize_html({contained: true}));
             }
-            elem.append(table);
+            return table[0].outerHTML;
         }
     }
 }
@@ -1348,18 +1329,44 @@ class RangeExpression extends Expression {
         return successResult(new Matrix(1, range.length, range, "double"));
     }
 
-    public visualize_expr(elem: JQuery) {
-        elem.addClass("matlab-range");
-        let explanationElem = $('<table class="matlab-table"></table>').appendTo($('<div class="matlab-range-header"></div>').appendTo(elem));
-        let header = $("<tr></tr>").appendTo(explanationElem);
-        header.append($("<th>start</th>"));
-        this.step && header.append($("<th>step</th>"));
-        header.append($("<th>end</th>"));
-        
-        let components = $("<tr></tr>").appendTo(explanationElem);
-        this.start.visualize_html($("<td></td>").appendTo(components));
-        this.step && this.step.visualize_html($("<td></td>").appendTo(components));
-        this.end.visualize_html($("<td></td>").appendTo(components));
+    public visualize_expr() {
+        let headerHtml = 
+        `<div class="matlab-range-header">
+            <table class="matlab-table">
+                <tr>
+                    <th>start</th>
+                    ${this.step ? "<th>step</th>" : ""}
+                    <th>end</th>
+                </tr>
+                <tr>
+                    <td>${this.start.visualize_html()}</td>
+                    ${this.step ? "<td>" + this.step.visualize_html() + "</td>" : ""}
+                    <td>${this.end.visualize_html()}</td>
+                </tr>
+            </table>
+        </div>`;
+
+        let resultHtml = 
+        `<div class="matlab-range-result">
+            <table class="matlab-table">
+                <svg class="matlab-range-svg">
+                    <defs>
+                        <marker id="arrow" markerWidth="10" markerHeight="10" refx="9" refy="3" orient="auto" markerUnits="strokeWidth">
+                            <path d="M0,0 L0,6 L9,3 z" fill="#000" />
+                        </marker>
+                    </defs>
+                    <g transform="translate(-10,0)">
+                        <line x1="22" y1="25" x2="100%" y2="25" stroke="#000" stroke-width="1" marker-end="url(#arrow)" />
+                    </g>
+                </svg>
+            </table>
+        </div>`;
+
+        return 
+        `<div class="matlab-range">
+            
+            
+        </div>`
 
 
         var table = $('<table class="matlab-table"></table>').appendTo($('<div class="matlab-range-result" ></div>').appendTo(elem));
@@ -1377,10 +1384,6 @@ class RangeExpression extends Expression {
                 var td = $("<td></td>");
                 tr.append(td);
 
-                // NOTE: The numbers themselves in a range are calculated and thus
-                //       have a history, although in the future it may be useful to
-                //       somehow show the history of the start, step, and end.
-    //                    range[i].visualize_html(td);
                 var temp = $("<div></div>");
                 temp.addClass("matlab-scalar");
                 var tempSpan = $("<span></span>");
