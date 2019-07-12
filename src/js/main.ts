@@ -34,7 +34,7 @@ $(document).ready(function(){
             var src = matlab_parse(text);
             var cc = CodeConstruct.create(src);
             var result = cc.execute();
-            cc.visualize_html(vis);
+            vis.html(cc.visualize_html());
             //var result = cc.evaluate();
             // processAns(result);
         }
