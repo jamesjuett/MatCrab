@@ -1,5 +1,5 @@
 {
-  function composeBinaryOp(first, rest, assoc, exprType){
+  function composeBinaryOp(first: string, rest: string[], assoc: string, exprType: string) : any {
     assoc = assoc || "left";
     exprType = exprType || "binaryOp";
     if(!rest || rest.length === 0){
@@ -9,9 +9,9 @@
       var right = rest.pop();
       return {
         what: exprType,
-        op: right[0],
+        op: right![0],
         left: composeBinaryOp(first, rest, assoc, exprType),
-        right: right[1],
+        right: right![1],
         associativity: assoc
       }
     }
@@ -19,9 +19,9 @@
       var left = rest.shift();
       return {
         what: exprType,
-        op: left[0],
+        op: left![0],
         left: first,
-        right: composeBinaryOp(left[1], rest, assoc, exprType),
+        right: composeBinaryOp(left![1], rest, assoc, exprType),
         associativity: assoc
       }
     }

@@ -1,0 +1,26 @@
+{
+    "name": "MatCrab",
+    "version": "1.0.0",
+    "description": "Matlab Visualization Tool",
+    "private": true,
+    "main": "index.js",
+    "keywords": [],
+    "author": "James Juett",
+    "license": "",
+    "devDependencies": {
+        "@types/bootstrap": "^4.1.2",
+        "@types/jquery": "^3.3.4",
+        "@types/lodash": "^4.14.111",
+        "lodash": "^4.17.10",
+        "pegjs": "^0.10.0",
+        "ts-loader": "^4.4.2",
+        "ts-pegjs": "^0.2.5",
+        "typescript": "^3.5.2",
+        "webpack": "^4.34.0",
+        "webpack-cli": "^3.3.4"
+    },
+    "dependencies": {},
+    "scripts": {
+        "build": "node ./node_modules/.bin/webpack --config webpack.config.js"
+    }
+}
