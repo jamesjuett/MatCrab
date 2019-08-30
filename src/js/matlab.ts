@@ -923,7 +923,7 @@ export abstract class Expression extends CodeConstruct {
         "add_exp": (a:ASTNode) => new AddExpression(a),
         "mult_exp": (a:ASTNode) => new MultExpression(a),
         "unary_exp": (a:ASTNode) => new UnaryOperatorExpression(a),
-        // "postfix_exp": PostfixExpression,
+        "transpose_exp": (a:ASTNode) => new TransposeExpression(a),
         "call_exp": (a:ASTNode) => new IndexExpression(a),
         "colon_exp": (a:ASTNode) => new ColonExpression(a),
         // "end_exp": EndExpression,
@@ -1560,7 +1560,7 @@ export class UnaryOperatorExpression extends Expression {
         super(ast);
         this.op = ast.op;
 
-        this.operand = Expression.create(ast.left);
+        this.operand = Expression.create(ast.sub);
     }
 
     private readonly operators : {[op in UnaryOperator]: (n:number) => number} = {
@@ -1602,6 +1602,46 @@ export class UnaryOperatorExpression extends Expression {
     public visualize_expr() {
         return `<div class="matlab-exp-unaryOp">
             <div>${this.op}&nbsp;</div>
+            <div>${this.operand.visualize_html()}</div>
+        </div>`;
+    }
+}
+export class TransposeExpression extends Expression {
+
+    public readonly operand: Expression;
+    public readonly numTransposes: number;
+
+    public constructor(ast: ASTNode) {
+        super(ast);
+        this.numTransposes = ast.transposes.length;
+
+        this.operand = Expression.create(ast.sub);
+    }
+
+    protected evaluate() {
+
+        let operandResult = this.operand.execute();
+
+        if (operandResult.kind !== "success") {
+            return operandResult;
+        }
+        // [1,2,3;4,5,6;7,8,9]     1 4 7 2 6 8 3 6 9
+        // Perform transpose by doing a row-major traversal and recording as new column-major data
+        let oldMat = operandResult.value;
+        let newData : number[] = [];
+        for(let r = 1; r <= oldMat.rows; ++r) {
+            for (let c = 1; c <= oldMat.cols; ++c) {
+                newData.push(oldMat.at(r, c));
+            }
+        }
+
+        // Result matrix has number of cols/rows switched and new data from above
+        return successResult(new Matrix(oldMat.cols, oldMat.rows, newData, oldMat.dataType));
+    }
+
+    public visualize_expr() {
+        return `<div class="matlab-exp-unaryOp">
+            <div>transpose&nbsp;</div>
             <div>${this.operand.visualize_html()}</div>
         </div>`;
     }

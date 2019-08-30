@@ -130,7 +130,7 @@ UnaryExp
 PostfixExp
   = sub:(PrimaryExp / CallExp) _ trans:"'"+ {
     return {
-      what: "postfix_exp",
+      what: "transpose_exp",
       sub:sub,
       transposes: trans
     };
