@@ -1,0 +1,1 @@
+./node_modules/pegjs/bin/pegjs --plugin ./node_modules/ts-pegjs/src/tspegjs -o src/js/matlab_parser.ts matlab_grammar.txt

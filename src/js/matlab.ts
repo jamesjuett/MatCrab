@@ -81,6 +81,10 @@ export class Matrix implements Visualizable {
         return new Matrix(this.rows, this.cols, this.data.slice(), this.dataType);
     }
 
+    public equals(other: Matrix) : boolean {
+        return this.width === other.width && this.height === other.height &&
+               this.data.every((value, i) => value === other.data[i]);
+    }
     
     public linearIndex(row: number, col: number) {
         row = row - 1;
@@ -667,7 +671,7 @@ export class Variable implements Visualizable {
         this.name = name;
         this.value = value;
 
-        this.elem = $('<li class="list-group-item"><span class="badge">' + name + '</span></li>')
+        this.elem = $('<li class="list-group-item"><span class="badge matlab-var-badge">' + name + '</span></li>')
             .prepend(this.valueElem = $('<span class="matlab-var-holder"></span>'));
 
         // Show initial value
@@ -700,6 +704,10 @@ export class Environment {
     public static readonly global : Environment;
     public static setGlobalEnvironment(elem: JQuery) {
         (<Environment>Environment.global) = new Environment(elem);
+    }
+
+    public static getCurrentEnvironment() {
+        return this.global;
     }
 
     private readonly elem : JQuery;

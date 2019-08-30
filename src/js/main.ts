@@ -31,12 +31,23 @@ $(document).ready(function(){
 
     var parseAndEval = function(text: string) {
         if (text.length > 0) {
-            var src = matlab_parse(text);
-            var cc = CodeConstruct.create(src);
-            var result = cc.execute();
-            vis.html(cc.visualize_html());
-            //var result = cc.evaluate();
-            // processAns(result);
+            try {
+                var src = matlab_parse(text);
+                var cc = CodeConstruct.create(src);
+                var result = cc.execute();
+                vis.html(cc.visualize_html());
+                //var result = cc.evaluate();
+                // processAns(result);
+            }
+            catch(err) {
+                if (err.name === "SyntaxError") {
+                    vis.html("Syntax Error");
+                }
+                else {
+                    vis.html("Sorry, an unexpected MatCrab error occurred. Please report to jjuett@umich.edu.")
+                    throw err;
+                }
+            }
         }
     };
 
