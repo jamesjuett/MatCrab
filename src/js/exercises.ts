@@ -56,8 +56,10 @@ class ExerciseGroup {
 
 $(document).ready(function(){
     let exercises = new ExerciseGroup({
-        x : new Matrix(2, 2, [1,2,3,4], "double"),
-        y : new Matrix(1, 3, [2,3,4], "double")
+        x : new Matrix(2, 2, [3,9,6,8], "double"),
+        y : new Matrix(1, 4, [1, 6, 11, 16], "double"),
+        z : new Matrix(2, 6, [1, 6, 11, 16, 3, 6, 1, 6, 11, 16, 9, 8], "double"),
+        w : new Matrix(4, 2, [3,9,3,9,6,8,6,8], "double")
     })
     
     Environment.setGlobalEnvironment($("#vars"));
@@ -68,14 +70,25 @@ $(document).ready(function(){
     var vis = $("#visualization");
 
     var parseAndEval = function(text: string) {
-        if (text.length > 0) {
-            var src = matlab_parse(text);
-            var cc = CodeConstruct.create(src);
-            var result = cc.execute();
-            vis.html(cc.visualize_html());
-            //var result = cc.evaluate();
-            // processAns(result);
-            renderExercises();
+        try {
+            if (text.length > 0) {
+                var src = matlab_parse(text);
+                var cc = CodeConstruct.create(src);
+                var result = cc.execute();
+                vis.html(cc.visualize_html());
+                //var result = cc.evaluate();
+                // processAns(result);
+                renderExercises();
+            }
+        }
+        catch(err) {
+            if (err.name === "SyntaxError") {
+                vis.html("Syntax Error");
+            }
+            else {
+                vis.html("Sorry, an unexpected MatCrab error occurred. Please report to jjuett@umich.edu.")
+                throw err;
+            }
         }
     };
 
