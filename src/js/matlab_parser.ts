@@ -291,7 +291,7 @@ function peg$parse(input: string, options?: IParseOptions) {
   const peg$c63 = peg$literalExpectation("'", false);
   const peg$c64 = function(sub: any, trans: any): any {
       return {
-        what: "postfix_exp",
+        what: "transpose_exp",
         sub:sub,
         transposes: trans
       };
