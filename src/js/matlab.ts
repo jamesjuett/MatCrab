@@ -699,6 +699,18 @@ export class Variable implements Visualizable {
     }
 }
 
+type MatlabFunctionFuncType = (args: Matrix[]) => Matrix;
+
+export class MatlabFunction {
+
+    public constructor(private readonly func : MatlabFunctionFuncType, public readonly numArgs: number) {}
+
+    public operate(args: Matrix[]) {
+        return this.func(args);
+    }
+
+}
+
 export class Environment {
 
     public static readonly global : Environment;
@@ -711,7 +723,8 @@ export class Environment {
     }
 
     private readonly elem : JQuery;
-    private readonly vars : {[index:string] : Variable } = {}
+    private readonly vars : {[index:string] : Variable | undefined } = {};
+    private readonly functions : {[index:string] : MatlabFunction | undefined } = {};
     private readonly endValueStack : number[] = [];
 
     public constructor (elem: JQuery) {
@@ -722,24 +735,44 @@ export class Environment {
         return this.vars.hasOwnProperty(name);
     }
 
-    public getVar(name: string) : Variable | undefined {
+    public lookup(name: string) : Variable | MatlabFunction | undefined {
+        let vari = this.vars[name];
+        if (vari) {
+            // If a variable with that name exists, it is found first,
+            // even if there is also a function with that same name
+            return vari;
+        }
+
+        return this.functions[name]; // or undefined if no functions with that name either
+    }
+
+    public varLookup(name: string) : Variable | undefined {
         return this.vars[name];
     }
 
+    public functionLookup(name: string) : MatlabFunction | undefined {
+        return this.functions[name];
+    }
+
     public setVar(name: string, value: Matrix) {
-        if (this.hasVar(name)){
-            this.vars[name].setValue(value);
+        let vari = this.vars[name];
+        if (vari) {
+            vari.setValue(value);
         }
         else{
-            var v = new Variable(name, value);
+            var newVar = new Variable(name, value);
             if (name !== "ans"){
-                this.elem.append(v.elem);
+                this.elem.append(newVar.elem);
             }
             else{
-                this.elem.prepend(v.elem);
+                this.elem.prepend(newVar.elem);
             }
-            this.vars[name] = v;
+            this.vars[name] = newVar;
         }
+    }
+
+    public setFunction(name: string, func: MatlabFunction) {
+        this.functions[name] = func;
     }
 
     public pushEndValue(value: number) {
@@ -924,7 +957,7 @@ export abstract class Expression extends CodeConstruct {
         "mult_exp": (a:ASTNode) => new MultExpression(a),
         "unary_exp": (a:ASTNode) => new UnaryOperatorExpression(a),
         "transpose_exp": (a:ASTNode) => new TransposeExpression(a),
-        "call_exp": (a:ASTNode) => new IndexExpression(a),
+        "call_exp": (a:ASTNode) => new IndexOrCallExpression(a),
         "colon_exp": (a:ASTNode) => new ColonExpression(a),
         // "end_exp": EndExpression,
         "integer": (a:ASTNode) => new LiteralExpression(a),
@@ -1032,7 +1065,7 @@ export class Assignment extends CodeConstruct {
     }
 }
 
-// TODO: reduce code duplication between IndexedAssignment and IndexExpression
+// TODO: reduce code duplication between IndexedAssignment and IndexOrCallExpression
 class IndexedAssignment extends Expression {
     
     public readonly targetName: string;
@@ -1053,7 +1086,7 @@ class IndexedAssignment extends Expression {
 
     // TODO: change to execute
     public evaluate() : ExecutedExpressionResult {
-        let vari = Environment.global.getVar(this.targetName);
+        let vari = Environment.global.lookup(this.targetName);
         if (!vari) {
             return errorResult(new MatlabError(this, "Sorry, I can't find a variable named " + this.targetName));
         }
@@ -1649,66 +1682,79 @@ export class TransposeExpression extends Expression {
 
 
 // TODO: This whole thing needs a bit of review
-class IndexExpression extends Expression {
+class IndexOrCallExpression extends Expression {
 
     // currentIndexedVariable : null
     // currentIndexedDimension : 0,
     
     public readonly targetName: string;
-    public readonly indicies: readonly Expression[];
+    public readonly indiciesOrInputs: readonly Expression[];
 
     public readonly subarrayResult?: Subarray;
     public readonly originalMatrix? : Matrix;
 
     public constructor(ast: ASTNode) {
         super(ast);
-        // TODO: may be nice to change grammar here to not have a nested identifier
-        this.targetName = ast["receiver"]["identifier"];
-        this.indicies = ast["args"].map((i:ASTNode) => Expression.create(i));
+        this.targetName = ast["target"];
+        this.indiciesOrInputs = ast["args"].map((i:ASTNode) => Expression.create(i));
     }
 
     protected evaluate() {
-        let vari = Environment.global.getVar(this.targetName);
+        let vari = Environment.global.lookup(this.targetName);
         if (!vari) {
             return errorResult(new MatlabError(this, "Sorry, I can't find a variable or function named " + this.targetName));
         }
 
-        let target = vari.value;
-        (<Mutable<this>>this).originalMatrix = target.clone();
+        if (vari instanceof Variable) {
+            let target = vari.value;
+            (<Mutable<this>>this).originalMatrix = target.clone();
 
-        if (this.indicies.length > 2) {
-            return errorResult(new MatlabError(this, "Sorry, indexing in more that two dimensions is not currently supported."));
-        }
+            if (this.indiciesOrInputs.length > 2) {
+                // TODO: add an error message that suggests students might have shadowed a function, if that is the case. maybe add it here?
+                return errorResult(new MatlabError(this, "Sorry, indexing in more that two dimensions is not currently supported."));
+            }
 
-        let indicesResults = this.indicies.map((index, i) => {
-            Environment.global.pushEndValue(target.length(<1|2>(i+1)));
-            let res = index.execute();
-            Environment.global.popEndValue();
-            return res;
-        });
+            let indicesResults = this.indiciesOrInputs.map((index, i) => {
+                Environment.global.pushEndValue(target.length(<1|2>(i+1))); // 1 or 2 guaranteed from above error check for too many indices
+                let res = index.execute();
+                Environment.global.popEndValue();
+                return res;
+            });
 
-        
-        if (!allSuccess(indicesResults)) {
-            return indicesResults.find(r => {return r.kind !== "success";})!;
-        }
+            
+            if (!allSuccess(indicesResults)) {
+                return indicesResults.find(r => {return r.kind !== "success";})!;
+            }
 
-        if (indicesResults.length === 1) {
-            (<Mutable<this>>this).subarrayResult = LinearSubarray.create(
-                this.indicies[0] instanceof ColonExpression ? ":" : indicesResults[0].value);
+            if (indicesResults.length === 1) {
+                (<Mutable<this>>this).subarrayResult = LinearSubarray.create(
+                    this.indiciesOrInputs[0] instanceof ColonExpression ? ":" : indicesResults[0].value);
+            }
+            else {
+                (<Mutable<this>>this).subarrayResult = CoordinateSubarray.create(
+                    this.indiciesOrInputs[0] instanceof ColonExpression ? ":" : indicesResults[0].value,
+                    this.indiciesOrInputs[1] instanceof ColonExpression ? ":" : indicesResults[1].value);
+            }
+
+            try {
+                this.subarrayResult!.verify(target);
+                return successResult(this.subarrayResult!.readValue(target));
+            }
+            catch(msg) {
+                return errorResult(new MatlabError(this, msg));
+            }
         }
         else {
-            (<Mutable<this>>this).subarrayResult = CoordinateSubarray.create(
-                this.indicies[0] instanceof ColonExpression ? ":" : indicesResults[0].value,
-                this.indicies[1] instanceof ColonExpression ? ":" : indicesResults[1].value);
+            if (this.indiciesOrInputs.length != vari.numArgs) {
+                return errorResult(new MatlabError(this, `Invalid number of arguments for the ${this.targetName} function.`));
+            }
+
+            let inputResults = this.indiciesOrInputs.map((input) => input.execute());
+
+            return successResult(new Mat)
         }
 
-        try {
-            this.subarrayResult!.verify(target);
-            return successResult(this.subarrayResult!.readValue(target));
-        }
-        catch(msg) {
-            return errorResult(new MatlabError(this, msg));
-        }
+        
 
     }
 
@@ -1790,7 +1836,7 @@ export class IdentifierExpression extends Expression {
 
     protected evaluate() {
         let env = Environment.global;
-        let vari = env.getVar(this.name);
+        let vari = env.lookup(this.name);
         if (vari) {
             return successResult(vari.value);
         }

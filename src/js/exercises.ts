@@ -14,7 +14,7 @@ class VariableExercise {
     }
 
     public check() {
-        let v = Environment.getCurrentEnvironment().getVar(this.variableName);
+        let v = Environment.getCurrentEnvironment().lookup(this.variableName);
         return v && v.value.equals(this.targetValue);
     }
 

@@ -298,14 +298,14 @@ function peg$parse(input: string, options?: IParseOptions) {
     };
   const peg$c65 = "(";
   const peg$c66 = peg$literalExpectation("(", false);
-  const peg$c67 = function(receiver: any, head: any, a: any): any {return a;};
+  const peg$c67 = function(target: any, head: any, a: any): any {return a;};
   const peg$c68 = ")";
   const peg$c69 = peg$literalExpectation(")", false);
-  const peg$c70 = function(receiver: any, head: any, tail: any): any {
+  const peg$c70 = function(target: any, head: any, tail: any): any {
       tail.unshift(head);
       return {
         what: "call_exp",
-        receiver: receiver,
+        target: target.identifier,
         args: tail
       };
     };

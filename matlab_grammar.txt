@@ -139,11 +139,11 @@ PostfixExp
   / PrimaryExp
 
 CallExp
-  = receiver:Identifier _ "(" _ head:IndexExp tail:(_ "," _ a:IndexExp {return a;})* _ ")" {
+  = target:Identifier _ "(" _ head:IndexExp tail:(_ "," _ a:IndexExp {return a;})* _ ")" {
     tail.unshift(head);
     return {
       what: "call_exp",
-      receiver: receiver,
+      target: target.identifier,
       args: tail
     };
   }
