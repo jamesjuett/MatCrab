@@ -1,6 +1,10 @@
 
 export type Mutable<T> = { -readonly [P in keyof T]: T[P] };
 
+export function asMutable<T>(obj: T) : Mutable<T> {
+    return <Mutable<T>>obj;
+}
+
 export function assert(condition: any, message = "") {
     if (!condition)
         throw Error("Assert failed: " + message);

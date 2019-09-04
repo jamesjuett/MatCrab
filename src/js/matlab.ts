@@ -1,4 +1,4 @@
-import { Mutable, Color, assert, cloneArray, MatlabMath } from "./util/util";
+import { Mutable, Color, assert, cloneArray, MatlabMath, asMutable } from "./util/util";
 
 
 
@@ -703,7 +703,7 @@ type MatlabFunctionFuncType = (args: Matrix[]) => Matrix;
 
 export class MatlabFunction {
 
-    public constructor(private readonly func : MatlabFunctionFuncType, public readonly numArgs: number) {}
+    public constructor(public readonly numArgs: number, private readonly func : MatlabFunctionFuncType) {}
 
     public operate(args: Matrix[]) {
         return this.func(args);
@@ -711,11 +711,32 @@ export class MatlabFunction {
 
 }
 
+const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
+    "fliplr" : new MatlabFunction(1, (args: Matrix[]) => {
+        let orig = args[0];
+        let newMat = orig.clone();
+        for(let r = 1; r <= orig.rows; ++r) {
+            // Iterate through original and fill new in backward fashion for each row
+            for (let c_orig = 1, c_new = newMat.cols; c_orig <= orig.cols; ++c_orig, --c_new) {
+                newMat.setAt(r, c_new, orig.at(r, c_orig));
+            }
+        }
+        return newMat;
+    })
+}
+
 export class Environment {
 
     public static readonly global : Environment;
     public static setGlobalEnvironment(elem: JQuery) {
-        (<Environment>Environment.global) = new Environment(elem);
+        let global = new Environment(elem);
+
+        // Add built in functions to global environment
+        for(let functionName in MATLAB_FUNCTIONS) {
+            global.setFunction(functionName, MATLAB_FUNCTIONS[functionName]);
+        }
+
+        asMutable(Environment).global = global;
     }
 
     public static getCurrentEnvironment() {
@@ -1087,7 +1108,7 @@ class IndexedAssignment extends Expression {
     // TODO: change to execute
     public evaluate() : ExecutedExpressionResult {
         let vari = Environment.global.lookup(this.targetName);
-        if (!vari) {
+        if (!vari || vari instanceof MatlabFunction) {
             return errorResult(new MatlabError(this, "Sorry, I can't find a variable named " + this.targetName));
         }
 
@@ -1688,7 +1709,7 @@ class IndexOrCallExpression extends Expression {
     // currentIndexedDimension : 0,
     
     public readonly targetName: string;
-    public readonly indiciesOrInputs: readonly Expression[];
+    public readonly indiciesOrArgs: readonly Expression[];
 
     public readonly subarrayResult?: Subarray;
     public readonly originalMatrix? : Matrix;
@@ -1696,7 +1717,7 @@ class IndexOrCallExpression extends Expression {
     public constructor(ast: ASTNode) {
         super(ast);
         this.targetName = ast["target"];
-        this.indiciesOrInputs = ast["args"].map((i:ASTNode) => Expression.create(i));
+        this.indiciesOrArgs = ast["args"].map((i:ASTNode) => Expression.create(i));
     }
 
     protected evaluate() {
@@ -1709,12 +1730,12 @@ class IndexOrCallExpression extends Expression {
             let target = vari.value;
             (<Mutable<this>>this).originalMatrix = target.clone();
 
-            if (this.indiciesOrInputs.length > 2) {
+            if (this.indiciesOrArgs.length > 2) {
                 // TODO: add an error message that suggests students might have shadowed a function, if that is the case. maybe add it here?
                 return errorResult(new MatlabError(this, "Sorry, indexing in more that two dimensions is not currently supported."));
             }
 
-            let indicesResults = this.indiciesOrInputs.map((index, i) => {
+            let indicesResults = this.indiciesOrArgs.map((index, i) => {
                 Environment.global.pushEndValue(target.length(<1|2>(i+1))); // 1 or 2 guaranteed from above error check for too many indices
                 let res = index.execute();
                 Environment.global.popEndValue();
@@ -1728,12 +1749,12 @@ class IndexOrCallExpression extends Expression {
 
             if (indicesResults.length === 1) {
                 (<Mutable<this>>this).subarrayResult = LinearSubarray.create(
-                    this.indiciesOrInputs[0] instanceof ColonExpression ? ":" : indicesResults[0].value);
+                    this.indiciesOrArgs[0] instanceof ColonExpression ? ":" : indicesResults[0].value);
             }
             else {
                 (<Mutable<this>>this).subarrayResult = CoordinateSubarray.create(
-                    this.indiciesOrInputs[0] instanceof ColonExpression ? ":" : indicesResults[0].value,
-                    this.indiciesOrInputs[1] instanceof ColonExpression ? ":" : indicesResults[1].value);
+                    this.indiciesOrArgs[0] instanceof ColonExpression ? ":" : indicesResults[0].value,
+                    this.indiciesOrArgs[1] instanceof ColonExpression ? ":" : indicesResults[1].value);
             }
 
             try {
@@ -1745,13 +1766,18 @@ class IndexOrCallExpression extends Expression {
             }
         }
         else {
-            if (this.indiciesOrInputs.length != vari.numArgs) {
+            let func = vari;
+            if (this.indiciesOrArgs.length != vari.numArgs) {
                 return errorResult(new MatlabError(this, `Invalid number of arguments for the ${this.targetName} function.`));
             }
 
-            let inputResults = this.indiciesOrInputs.map((input) => input.execute());
+            let argResults = this.indiciesOrArgs.map((input) => input.execute());
 
-            return successResult(new Mat)
+            if (!allSuccess(argResults)) {
+                return argResults.find(r => {return r.kind !== "success";})!;
+            }
+
+            return successResult(func.operate(argResults.map((argRes) => argRes.value)));
         }
 
         
@@ -1837,7 +1863,7 @@ export class IdentifierExpression extends Expression {
     protected evaluate() {
         let env = Environment.global;
         let vari = env.lookup(this.name);
-        if (vari) {
+        if (vari && !(vari instanceof MatlabFunction)) {
             return successResult(vari.value);
         }
         else {
