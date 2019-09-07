@@ -98,6 +98,7 @@ export class Matrix implements Visualizable {
 
     public setLinear(index: number, value: number) {
         (<number[]>this.data)[index - 1] = value;
+        return this;
     }
 
     public at(row: number, col: number) {
@@ -110,12 +111,14 @@ export class Matrix implements Visualizable {
         row = row - 1;
         col = col - 1;
         (<number[]>this.data)[col * this.rows + row] = value;
+        return this;
     }
 
     public fill(value: number) {
         for(let i = 0; i < this.data.length; ++i) {
             (<number[]>this.data)[i] = value;
         }
+        return this;
     }
 
     // REQUIRES: data has the same number of elements as the original matrix data
@@ -124,6 +127,7 @@ export class Matrix implements Visualizable {
         for(let i = 0; i < this.data.length; ++i) {
             (<number[]>this.data)[i] = data[i];
         }
+        return this;
     }
 
     public length(dimension: 1 | 2) {
@@ -703,12 +707,66 @@ type MatlabFunctionFuncType = (args: Matrix[]) => Matrix;
 
 export class MatlabFunction {
 
-    public constructor(public readonly numArgs: number, private readonly func : MatlabFunctionFuncType) {}
+    /**
+     * 
+     * @param numArgs The number of arguments required for the function. If a pair of numbers, specifies a
+     *                range (inclusive) of the number of arguments allowed.
+     * @param func A function that accepts the argument values passed into this MATLAB function and returns
+     *             the value of the result from that function. (Note this is a Typescript function that
+     *             essentially "fakes" the black-box behavior of the MATLAB function behind the scences.)
+     */
+    public constructor(public readonly numArgs: number | [number, number], private readonly func : MatlabFunctionFuncType) {}
 
-    public operate(args: Matrix[]) {
-        return this.func(args);
+    public operate(construct: CodeConstruct, args: Matrix[]) {
+        try {
+            return successResult(this.func(args));
+        }
+        catch(msg) {
+            return errorResult(new MatlabError(construct, msg));
+        }
     }
 
+    public isValidNumberOfArgs(n: number) {
+        if (Array.isArray(this.numArgs)) {
+            return this.numArgs[0] <= n && n <= this.numArgs[1];
+        }
+        else {
+            return n === this.numArgs;
+        }
+    }
+
+}
+
+function createSizedMatrix(args: Matrix[]) {
+    if (args.length === 0) {
+        return new Matrix(1,1,[0],"double");
+    }
+    else if (args.length === 1) {
+        let arg = args[0];
+        if (arg.isScalar) {
+            // A scalar is acceptable and produces a square matrix
+            let size = arg.scalarValue();
+            return new Matrix(size, size, new Array(size*size), "double");
+        }
+        else {
+            // Otherwise, must be a row vector with real values
+            if (arg.rows !== 1) {
+                throw "The one-argument version of this function requires a numeric row vector as an input."
+            }
+            return new Matrix(arg.atLinear(1), arg.atLinear(2), new Array(arg.atLinear(1) * arg.atLinear(2)), "double");
+        }
+    }
+    else { // args.length === 2
+        let numRows = args[0];
+        let numCols = args[1];
+        if (!numRows.isScalar) {
+            throw "The argument for the number of rows must be a scalar.";
+        }
+        if (!numCols.isScalar) {
+            throw "The argument for the number of columns must be a scalar.";
+        }
+        return new Matrix(numRows.scalarValue(), numCols.scalarValue(), new Array(numRows.scalarValue() * numCols.scalarValue()), "double");
+    }
 }
 
 const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
@@ -729,11 +787,13 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
         for(let c = 1; c <= orig.cols; ++c) {
             // Iterate through original and fill new in backward fashion for each column
             for (let r_orig = 1, r_new = newMat.rows; r_orig <= orig.rows; ++r_orig, --r_new) {
-                newMat.setAt(r_new, c, orig.at(r_old, c));
+                newMat.setAt(r_new, c, orig.at(r_orig, c));
             }
         }
         return newMat;
-    })
+    }),
+    "zeros" : new MatlabFunction([0,2], (args: Matrix[]) => createSizedMatrix(args).fill(0)),
+    "ones" : new MatlabFunction([0,2], (args: Matrix[]) => createSizedMatrix(args).fill(1))
 }
 
 export class Environment {
@@ -1780,7 +1840,7 @@ class IndexOrCallExpression extends Expression {
         }
         else {
             let func = (<Mutable<this>>this).executedFunction = vari;
-            if (this.indiciesOrArgs.length != vari.numArgs) {
+            if (!func.isValidNumberOfArgs(this.indiciesOrArgs.length)) {
                 return errorResult(new MatlabError(this, `Invalid number of arguments for the ${this.targetName} function.`));
             }
 
@@ -1790,7 +1850,7 @@ class IndexOrCallExpression extends Expression {
                 return argResults.find(r => {return r.kind !== "success";})!;
             }
 
-            return successResult(func.operate(argResults.map((argRes) => argRes.value)));
+            return func.operate(this, argResults.map((argRes) => argRes.value));
         }
 
         
