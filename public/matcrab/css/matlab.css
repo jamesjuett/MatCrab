@@ -237,3 +237,8 @@ svg.matlab-range-svg {
 .matlab-entry {
     font-size: inherit;
 }
+
+.matlab-call-arg {
+    display: inline-block;
+    vertical-align: middle;
+}

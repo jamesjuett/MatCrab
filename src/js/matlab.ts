@@ -722,6 +722,17 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
             }
         }
         return newMat;
+    }),
+    "flipud" : new MatlabFunction(1, (args: Matrix[]) => {
+        let orig = args[0];
+        let newMat = orig.clone();
+        for(let c = 1; c <= orig.cols; ++c) {
+            // Iterate through original and fill new in backward fashion for each column
+            for (let r_orig = 1, r_new = newMat.rows; r_orig <= orig.rows; ++r_orig, --r_new) {
+                newMat.setAt(r_new, c, orig.at(r_old, c));
+            }
+        }
+        return newMat;
     })
 }
 
@@ -1714,6 +1725,8 @@ class IndexOrCallExpression extends Expression {
     public readonly subarrayResult?: Subarray;
     public readonly originalMatrix? : Matrix;
 
+    public readonly executedFunction? : MatlabFunction;
+
     public constructor(ast: ASTNode) {
         super(ast);
         this.targetName = ast["target"];
@@ -1766,7 +1779,7 @@ class IndexOrCallExpression extends Expression {
             }
         }
         else {
-            let func = vari;
+            let func = (<Mutable<this>>this).executedFunction = vari;
             if (this.indiciesOrArgs.length != vari.numArgs) {
                 return errorResult(new MatlabError(this, `Invalid number of arguments for the ${this.targetName} function.`));
             }
@@ -1794,17 +1807,23 @@ class IndexOrCallExpression extends Expression {
         
         if (this.originalMatrix && this.subarrayResult) {
             valueHtml = this.subarrayResult.visualize_selection(this.originalMatrix);
+            return `<div class="matlab-exp-index">
+                ${valueHtml}
+                <div class="matlab-identifier-name">${this.targetName}</div>
+            </div>`
             
+        }
+        else if (this.executedFunction) {
+            return `<div class="matlab-exp-call">
+                ${this.targetName}(
+                    ${this.indiciesOrArgs.map((arg) => `<div class="matlab-call-arg">${arg.visualize_html()}</div>`).join(",")}
+                )</div>`
         }
         else {
             //TODO
-            valueHtml = "";
+            return "";
         }
 
-        return `<div class="matlab-exp-index">
-            ${valueHtml}
-            <div class="matlab-identifier-name">${this.targetName}</div>
-        </div>`
     }
 }
 
