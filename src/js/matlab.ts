@@ -707,6 +707,8 @@ type MatlabFunctionFuncType = (args: Matrix[]) => Matrix;
 
 export class MatlabFunction {
 
+    public static readonly ARGS_INF = -1;
+
     /**
      * 
      * @param numArgs The number of arguments required for the function. If a pair of numbers, specifies a
@@ -728,7 +730,7 @@ export class MatlabFunction {
 
     public isValidNumberOfArgs(n: number) {
         if (Array.isArray(this.numArgs)) {
-            return this.numArgs[0] <= n && n <= this.numArgs[1];
+            return this.numArgs[0] <= n && (n <= this.numArgs[1] || this.numArgs[1] === MatlabFunction.ARGS_INF);
         }
         else {
             return n === this.numArgs;
@@ -756,7 +758,7 @@ function createSizedMatrix(args: Matrix[]) {
             return new Matrix(arg.atLinear(1), arg.atLinear(2), new Array(arg.atLinear(1) * arg.atLinear(2)), "double");
         }
     }
-    else { // args.length === 2
+    else if ( args.length === 2) {
         let numRows = args[0];
         let numCols = args[1];
         if (!numRows.isScalar) {
@@ -766,6 +768,9 @@ function createSizedMatrix(args: Matrix[]) {
             throw "The argument for the number of columns must be a scalar.";
         }
         return new Matrix(numRows.scalarValue(), numCols.scalarValue(), new Array(numRows.scalarValue() * numCols.scalarValue()), "double");
+    }
+    else {
+        throw "Sorry, MatCrab does not support matrices with more than two dimensions.";
     }
 }
 
@@ -792,8 +797,16 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
         }
         return newMat;
     }),
-    "zeros" : new MatlabFunction([0,2], (args: Matrix[]) => createSizedMatrix(args).fill(0)),
-    "ones" : new MatlabFunction([0,2], (args: Matrix[]) => createSizedMatrix(args).fill(1))
+    "zeros" : new MatlabFunction([0,MatlabFunction.ARGS_INF], (args: Matrix[]) => createSizedMatrix(args).fill(0)),
+    "ones" : new MatlabFunction([0,MatlabFunction.ARGS_INF], (args: Matrix[]) => createSizedMatrix(args).fill(1)),
+    "eye" : new MatlabFunction([0,MatlabFunction.ARGS_INF], (args: Matrix[]) => {
+        let mat = createSizedMatrix(args);
+        let diag_len = Math.min(mat.rows, mat.cols);
+        for(let i = 1; i <= diag_len; ++i) {
+            mat.setAt(i, i, 1);
+        }
+        return mat;
+    })
 }
 
 export class Environment {
