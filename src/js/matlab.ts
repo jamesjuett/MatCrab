@@ -800,13 +800,16 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
     "zeros" : new MatlabFunction([0,MatlabFunction.ARGS_INF], (args: Matrix[]) => createSizedMatrix(args).fill(0)),
     "ones" : new MatlabFunction([0,MatlabFunction.ARGS_INF], (args: Matrix[]) => createSizedMatrix(args).fill(1)),
     "eye" : new MatlabFunction([0,MatlabFunction.ARGS_INF], (args: Matrix[]) => {
-        let mat = createSizedMatrix(args);
+        let mat = createSizedMatrix(args).fill(0);
         let diag_len = Math.min(mat.rows, mat.cols);
         for(let i = 1; i <= diag_len; ++i) {
             mat.setAt(i, i, 1);
         }
         return mat;
-    })
+    }),
+    "numel" : new MatlabFunction(1, (args: Matrix[]) => Matrix.scalar(args[0].numel, "double")),
+    "length" : new MatlabFunction(1, (args: Matrix[]) => Matrix.scalar(Math.max(args[0].rows, args[0].cols), "double")),
+    "size" : new MatlabFunction(1, (args: Matrix[]) => new Matrix(1, 2, [args[0].rows, args[0].cols], "double"))
 }
 
 export class Environment {
