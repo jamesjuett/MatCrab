@@ -1,4 +1,5 @@
 import { Mutable, Color, assert, cloneArray, MatlabMath, asMutable } from "./util/util";
+import { range } from "lodash";
 
 
 
@@ -42,7 +43,7 @@ export class Matrix implements Visualizable {
     }
     
 
-
+    public readonly numDims = 2;
     public readonly rows: number;
     public readonly cols: number;
     public readonly height: number;
@@ -149,6 +150,26 @@ export class Matrix implements Visualizable {
 
     public contains(value: number) : boolean {
         return this.data.indexOf(value) !== -1;
+    }
+
+    public colData(col: number) : number[] {
+        return this.data.slice((col-1) * this.rows, col * this.rows);
+    }
+
+    public rowData(row: number) : number[] {
+        return range(1, this.cols + 1).map((c) => this.at(row, c));
+    }
+
+    public accumulateCols(operate: (a:number, b:number) => number) {
+        return new Matrix(1, this.cols,
+            range(1, this.cols+1).map((c) => this.colData(c).reduce(operate)),
+            "double");
+    }
+    
+    public accumulateRows(operate: (a:number, b:number) => number) {
+        return new Matrix(this.rows, 1,
+            range(1, this.rows+1).map((c) => this.rowData(c).reduce(operate)),
+            "double");
     }
 
     public visualize_html(options?: VisualizationOptions) : string {
@@ -774,6 +795,35 @@ function createSizedMatrix(args: Matrix[]) {
     }
 }
 
+
+function matrixAccumulation(mat: Matrix, dimension: Matrix | undefined, operate: (a:number, b:number) => number) {
+    let dim = 1; // default unless overwritten
+    if (dimension) {
+        if (!dimension.isScalar || dimension.scalarValue() < 1 || !Number.isInteger(dimension.scalarValue())) {
+            throw "The second argument specifying the operation dimension must be a positive integer scalar.";
+        }
+        dim = dimension.scalarValue();
+    } 
+
+    
+    // Special case: if a row/col vector, sum whole thing
+    if (mat.isVector) {
+        return new Matrix(1,1,[mat.data.reduce(operate)], "double"); // will coerce other numeric datatypes to double
+    }
+
+    if (dim === 1) {
+        return mat.accumulateCols(operate);
+    }
+    else if (dim === 2) {
+        return mat.accumulateRows(operate);
+    }
+    else {
+        // Because MatCrab does not support more than two dimensional matrices,
+        // sum with a dimension higher than 2 will always just return the original matrix
+        return mat.clone();
+    }
+}
+
 const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
     "fliplr" : new MatlabFunction(1, (args: Matrix[]) => {
         let orig = args[0];
@@ -865,7 +915,10 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
     }),
     "numel" : new MatlabFunction(1, (args: Matrix[]) => Matrix.scalar(args[0].numel, "double")),
     "length" : new MatlabFunction(1, (args: Matrix[]) => Matrix.scalar(Math.max(args[0].rows, args[0].cols), "double")),
-    "size" : new MatlabFunction(1, (args: Matrix[]) => new Matrix(1, 2, [args[0].rows, args[0].cols], "double"))
+    "size" : new MatlabFunction(1, (args: Matrix[]) => new Matrix(1, 2, [args[0].rows, args[0].cols], "double")),
+
+    "sum" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a + b)),
+    "prod" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a * b))
 }
 
 export class Environment {
