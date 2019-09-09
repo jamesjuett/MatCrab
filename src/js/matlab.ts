@@ -807,6 +807,62 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
         }
         return mat;
     }),
+    "magic" : new MatlabFunction(1, (args: Matrix[]) => {
+        let mat = createSizedMatrix(args);
+        let n = mat.rows; // mat will be square with side length n
+        if (n % 2 !== 0) {
+    
+            // de La Loubere's method for odd sizes. start in middle of top row,
+            // move diagonally up/right to fill in n elements.
+            // Then go down one, and repeat with a new diagonal. Do this for n diagonals.
+    
+            // Values range from 1 up through n^2, inclusive
+            let val = 1;
+    
+            // use 0 based indices here, adjust when using setAt below
+            let r = 0;
+            let c = Math.floor(n/2);
+            
+            // Fill in n diagonals
+            for (let d = 0; d < n; ++d) {
+    
+                // Each diagonal has length n
+                for(let i = 0; i < n; ++i) {
+                    mat.setAt(r + 1, c + 1, val++); // +1 to adjust to 1 based index
+                    r = (r - 1 + n) % n; // move up, wrap if necessary
+                    c = (c + 1 + n) % n; // move right, wrap if necessary
+                    // (Note the extra "+ n" avoids negative numbers that would break the % operation)
+                }
+    
+                // Drop down one after filling in each diagonal
+                // There was an extra r - 1 and c + 1 earlier, so we also need to undo those,
+                // meaning we want r + 2 and c - 1 to achieve a net of r + 1
+                r = (r + 2 + n) % n;
+                c = (c - 1 + n) % n;
+    
+            }
+        }
+        // The magic algorithm for even cases is more complicated, so let's just hardcode some for now.
+        else if (n === 2) {
+            mat.setAll([1,4,3,2]);
+        }
+        else if (n === 4) {
+            mat.setAll([16,5,9,4,2,11,7,14,3,10,6,15,13,8,12,1]);
+        }
+        else if (n === 6) {
+            mat.setAll([35,3,31,8,30,4,1,32,9,28,5,36,6,7,2,33,34,29,26,21,22,17,12,13,19,23,27,10,14,18,24,25,20,15,16,11]);
+        }
+        else if (n === 8) {
+            mat.setAll([64,9,17,40,32,41,49,8,2,55,47,26,34,23,15,58,3,54,46,27,35,22,14,59,61,12,20,37,29,44,52,5,60,13,21,36,28,45,53,4,6,51,43,30,38,19,11,62,7,50,42,31,39,18,10,63,57,16,24,33,25,48,56,1]);
+        }
+        else if (n === 10) {
+            mat.setAll([92,98,4,85,86,17,23,79,10,11,99,80,81,87,93,24,5,6,12,18,1,7,88,19,25,76,82,13,94,100,8,14,20,21,2,83,89,95,96,77,15,16,22,3,9,90,91,97,78,84,67,73,54,60,61,42,48,29,35,36,74,55,56,62,68,49,30,31,37,43,51,57,63,69,75,26,32,38,44,50,58,64,70,71,52,33,39,45,46,27,40,41,47,28,34,65,66,72,53,59]);
+        }
+        else {
+            throw "Sorry, MatCrab does not support magic matrices of even size greater than size 10."
+        }
+        return mat;
+    }),
     "numel" : new MatlabFunction(1, (args: Matrix[]) => Matrix.scalar(args[0].numel, "double")),
     "length" : new MatlabFunction(1, (args: Matrix[]) => Matrix.scalar(Math.max(args[0].rows, args[0].cols), "double")),
     "size" : new MatlabFunction(1, (args: Matrix[]) => new Matrix(1, 2, [args[0].rows, args[0].cols], "double"))
