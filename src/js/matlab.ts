@@ -41,6 +41,10 @@ export class Matrix implements Visualizable {
     public static scalar(value: number, dataType: DataType) {
         return new Matrix(1, 1, [value], dataType);
     }
+
+    public static createSized(rows: number, cols: number, dataType: DataType) {
+        return new Matrix(rows, cols, new Array(rows * cols), dataType);
+    }
     
 
     public readonly numDims = 2;
@@ -131,6 +135,10 @@ export class Matrix implements Visualizable {
         return this;
     }
 
+    public operateAll(operate: (val: number) => number) {
+        this.setAll(this.data.map(operate));
+    }
+
     public length(dimension: 1 | 2) {
         if (dimension === 1) {
             return this.rows;
@@ -156,8 +164,20 @@ export class Matrix implements Visualizable {
         return this.data.slice((col-1) * this.rows, col * this.rows);
     }
 
+    public setColData(col: number, newData: readonly number[]) {
+        for(let r = 1, i = 0; r <= this.rows; ++r) {
+            this.setAt(r, col, newData[i++]);
+        }
+    }
+
     public rowData(row: number) : number[] {
         return range(1, this.cols + 1).map((c) => this.at(row, c));
+    }
+
+    public setRowData(row: number, newData: readonly number[]) {
+        for(let c = 1, i = 0; c <= this.cols; ++c) {
+            this.setAt(row, c, newData[i++]);
+        }
     }
 
     public accumulateCols(operate: (a:number, b:number) => number) {
@@ -824,30 +844,73 @@ function matrixAccumulation(mat: Matrix, dimension: Matrix | undefined, operate:
     }
 }
 
+function matrixOperationFunction(mat: Matrix, operate: (val:number) => number) {
+    mat = mat.clone();
+    mat.operateAll(operate);
+    return mat;
+}
+
+function matrixFlipud(args: Matrix[]) {
+    let orig = args[0];
+    let newMat = orig.clone();
+    for(let c = 1; c <= orig.cols; ++c) {
+        // Iterate through original and fill new in backward fashion for each column
+        for (let r_orig = 1, r_new = newMat.rows; r_orig <= orig.rows; ++r_orig, --r_new) {
+            newMat.setAt(r_new, c, orig.at(r_orig, c));
+        }
+    }
+    return newMat;
+}
+
+function matrixFliplr(args: Matrix[]) {
+    let orig = args[0];
+    let newMat = orig.clone();
+    for(let r = 1; r <= orig.rows; ++r) {
+        // Iterate through original and fill new in backward fashion for each row
+        for (let c_orig = 1, c_new = newMat.cols; c_orig <= orig.cols; ++c_orig, --c_new) {
+            newMat.setAt(r, c_new, orig.at(r, c_orig));
+        }
+    }
+    return newMat;
+}
+
 function unsupportedMatlabFunction(name: string) {
     return (args: Matrix[]) => { throw `Sorry, MatCrab does not support the ${name} function.`; };
 }
 
 const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
-    "fliplr" : new MatlabFunction(1, (args: Matrix[]) => {
-        let orig = args[0];
-        let newMat = orig.clone();
-        for(let r = 1; r <= orig.rows; ++r) {
-            // Iterate through original and fill new in backward fashion for each row
-            for (let c_orig = 1, c_new = newMat.cols; c_orig <= orig.cols; ++c_orig, --c_new) {
-                newMat.setAt(r, c_new, orig.at(r, c_orig));
+    "fliplr" : new MatlabFunction(1, matrixFliplr),
+    "flipud" : new MatlabFunction(1, matrixFlipud),
+    "flip" : new MatlabFunction([1,2], (args: Matrix[]) => {
+        if (args.length === 1) {
+            return matrixFlipud(args);
+        }
+        else {
+            let dimension = args[1];
+            if (!dimension.isScalar || dimension.scalarValue() < 1 || !Number.isInteger(dimension.scalarValue())) {
+                throw "The second argument specifying the flip dimension must be a positive integer scalar.";
+            }
+            
+            let dim = dimension.scalarValue();
+            if (dim === 1) {
+                return matrixFlipud(args);
+            }
+            else if (dim === 2) {
+                return matrixFliplr(args);
+            }
+            else {
+                // flipping along a higher dimension does nothing, since MatCrab only supports 2D matrices
+                return args[0].clone();
             }
         }
-        return newMat;
     }),
-    "flipud" : new MatlabFunction(1, (args: Matrix[]) => {
+    "rot90" : new MatlabFunction(1, (args: Matrix[]) => {
         let orig = args[0];
-        let newMat = orig.clone();
-        for(let c = 1; c <= orig.cols; ++c) {
-            // Iterate through original and fill new in backward fashion for each column
-            for (let r_orig = 1, r_new = newMat.rows; r_orig <= orig.rows; ++r_orig, --r_new) {
-                newMat.setAt(r_new, c, orig.at(r_orig, c));
-            }
+        let newMat = Matrix.createSized(orig.cols, orig.rows, "double");
+        
+        // last column becomes first row, 2nd to last column becomes 2nd row, etc.
+        for(let c = orig.cols, r = 1; c >= 1; --c, ++r) {
+            newMat.setRowData(r, orig.colData(c));
         }
         return newMat;
     }),
@@ -923,6 +986,9 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
 
     "sum" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a + b)),
     "prod" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a * b)),
+
+    "sqrt" : new MatlabFunction(1, (args: Matrix[]) => matrixOperationFunction(args[0], (val:number) => Math.sqrt(val))),
+
     "display": new MatlabFunction([1,MatlabFunction.ARGS_INF], unsupportedMatlabFunction("display"))
 }
 
