@@ -824,6 +824,10 @@ function matrixAccumulation(mat: Matrix, dimension: Matrix | undefined, operate:
     }
 }
 
+function unsupportedMatlabFunction(name: string) {
+    return (args: Matrix[]) => { throw `Sorry, MatCrab does not support the ${name} function.`; };
+}
+
 const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
     "fliplr" : new MatlabFunction(1, (args: Matrix[]) => {
         let orig = args[0];
@@ -918,7 +922,8 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
     "size" : new MatlabFunction(1, (args: Matrix[]) => new Matrix(1, 2, [args[0].rows, args[0].cols], "double")),
 
     "sum" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a + b)),
-    "prod" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a * b))
+    "prod" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a * b)),
+    "display": new MatlabFunction([1,MatlabFunction.ARGS_INF], unsupportedMatlabFunction("display"))
 }
 
 export class Environment {
