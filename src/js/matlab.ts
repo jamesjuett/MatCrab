@@ -844,11 +844,17 @@ function matrixAccumulation(mat: Matrix, dimension: Matrix | undefined, operate:
     }
 }
 
-function matrixOperationFunction(mat: Matrix, operate: (val:number) => number) {
+function matrixUnaryFunction(mat: Matrix, operate: (val:number) => number) {
     mat = mat.clone();
     mat.operateAll(operate);
     return mat;
 }
+
+// function matrixBinaryFunction(mat1: Matrix, mat2: Matrix, operate: (val1:number, val2: number) => number) {
+//     mat = mat.clone();
+//     mat.operateAll(operate);
+//     return mat;
+// }
 
 function matrixFlipud(args: Matrix[]) {
     let orig = args[0];
@@ -987,7 +993,20 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
     "sum" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a + b)),
     "prod" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a * b)),
 
-    "sqrt" : new MatlabFunction(1, (args: Matrix[]) => matrixOperationFunction(args[0], (val:number) => Math.sqrt(val))),
+    "sqrt" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.sqrt(val))),
+    "sin" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.sin(val))),
+    "cos" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.cos(val))),
+    "tan" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.tan(val))),
+    "asin" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.asin(val))),
+    "acos" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.acos(val))),
+    "atan" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.atan(val))),
+    // "atan2" : new MatlabFunction(2, (args: Matrix[]) => matrixBinaryFunction(args[0], args[1], (val1:number, val2: number) => Math.atan2(val1, val2))),
+    "sinh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.sinh(val))),
+    "cosh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.cosh(val))),
+    "tanh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.tanh(val))),
+    "asinh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.asinh(val))),
+    "acosh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.acosh(val))),
+    "atanh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.atanh(val))),
 
     "display": new MatlabFunction([1,MatlabFunction.ARGS_INF], unsupportedMatlabFunction("display"))
 }
