@@ -992,6 +992,8 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
 
     "sum" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a + b)),
     "prod" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a * b)),
+    "min" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => Math.min(a, b))),
+    "max" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => Math.max(a, b))),
 
     "sqrt" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.sqrt(val))),
     "sin" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.sin(val))),
