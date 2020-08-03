@@ -1,4 +1,5 @@
-import { Mutable, Color, assert, cloneArray, MatlabMath } from "./util/util";
+import { Mutable, Color, assert, cloneArray, MatlabMath, asMutable } from "./util/util";
+import { range } from "lodash";
 
 
 
@@ -40,9 +41,13 @@ export class Matrix implements Visualizable {
     public static scalar(value: number, dataType: DataType) {
         return new Matrix(1, 1, [value], dataType);
     }
+
+    public static createSized(rows: number, cols: number, dataType: DataType) {
+        return new Matrix(rows, cols, new Array(rows * cols), dataType);
+    }
     
 
-
+    public readonly numDims = 2;
     public readonly rows: number;
     public readonly cols: number;
     public readonly height: number;
@@ -98,6 +103,7 @@ export class Matrix implements Visualizable {
 
     public setLinear(index: number, value: number) {
         (<number[]>this.data)[index - 1] = value;
+        return this;
     }
 
     public at(row: number, col: number) {
@@ -110,12 +116,14 @@ export class Matrix implements Visualizable {
         row = row - 1;
         col = col - 1;
         (<number[]>this.data)[col * this.rows + row] = value;
+        return this;
     }
 
     public fill(value: number) {
         for(let i = 0; i < this.data.length; ++i) {
             (<number[]>this.data)[i] = value;
         }
+        return this;
     }
 
     // REQUIRES: data has the same number of elements as the original matrix data
@@ -124,6 +132,11 @@ export class Matrix implements Visualizable {
         for(let i = 0; i < this.data.length; ++i) {
             (<number[]>this.data)[i] = data[i];
         }
+        return this;
+    }
+
+    public operateAll(operate: (val: number) => number) {
+        this.setAll(this.data.map(operate));
     }
 
     public length(dimension: 1 | 2) {
@@ -145,6 +158,38 @@ export class Matrix implements Visualizable {
 
     public contains(value: number) : boolean {
         return this.data.indexOf(value) !== -1;
+    }
+
+    public colData(col: number) : number[] {
+        return this.data.slice((col-1) * this.rows, col * this.rows);
+    }
+
+    public setColData(col: number, newData: readonly number[]) {
+        for(let r = 1, i = 0; r <= this.rows; ++r) {
+            this.setAt(r, col, newData[i++]);
+        }
+    }
+
+    public rowData(row: number) : number[] {
+        return range(1, this.cols + 1).map((c) => this.at(row, c));
+    }
+
+    public setRowData(row: number, newData: readonly number[]) {
+        for(let c = 1, i = 0; c <= this.cols; ++c) {
+            this.setAt(row, c, newData[i++]);
+        }
+    }
+
+    public accumulateCols(operate: (a:number, b:number) => number) {
+        return new Matrix(1, this.cols,
+            range(1, this.cols+1).map((c) => this.colData(c).reduce(operate)),
+            "double");
+    }
+    
+    public accumulateRows(operate: (a:number, b:number) => number) {
+        return new Matrix(this.rows, 1,
+            range(1, this.rows+1).map((c) => this.rowData(c).reduce(operate)),
+            "double");
     }
 
     public visualize_html(options?: VisualizationOptions) : string {
@@ -699,11 +744,287 @@ export class Variable implements Visualizable {
     }
 }
 
+type MatlabFunctionFuncType = (args: Matrix[]) => Matrix;
+
+export class MatlabFunction {
+
+    public static readonly ARGS_INF = -1;
+
+    /**
+     * 
+     * @param numArgs The number of arguments required for the function. If a pair of numbers, specifies a
+     *                range (inclusive) of the number of arguments allowed.
+     * @param func A function that accepts the argument values passed into this MATLAB function and returns
+     *             the value of the result from that function. (Note this is a Typescript function that
+     *             essentially "fakes" the black-box behavior of the MATLAB function behind the scences.)
+     */
+    public constructor(public readonly numArgs: number | [number, number], private readonly func : MatlabFunctionFuncType) {}
+
+    public operate(construct: CodeConstruct, args: Matrix[]) {
+        try {
+            return successResult(this.func(args));
+        }
+        catch(msg) {
+            return errorResult(new MatlabError(construct, msg));
+        }
+    }
+
+    public isValidNumberOfArgs(n: number) {
+        if (Array.isArray(this.numArgs)) {
+            return this.numArgs[0] <= n && (n <= this.numArgs[1] || this.numArgs[1] === MatlabFunction.ARGS_INF);
+        }
+        else {
+            return n === this.numArgs;
+        }
+    }
+
+}
+
+function createSizedMatrix(args: Matrix[]) {
+    if (args.length === 0) {
+        return new Matrix(1,1,[0],"double");
+    }
+    else if (args.length === 1) {
+        let arg = args[0];
+        if (arg.isScalar) {
+            // A scalar is acceptable and produces a square matrix
+            let size = arg.scalarValue();
+            return new Matrix(size, size, new Array(size*size), "double");
+        }
+        else {
+            // Otherwise, must be a row vector with real values
+            if (arg.rows !== 1) {
+                throw "The one-argument version of this function requires a numeric row vector as an input."
+            }
+            return new Matrix(arg.atLinear(1), arg.atLinear(2), new Array(arg.atLinear(1) * arg.atLinear(2)), "double");
+        }
+    }
+    else if ( args.length === 2) {
+        let numRows = args[0];
+        let numCols = args[1];
+        if (!numRows.isScalar) {
+            throw "The argument for the number of rows must be a scalar.";
+        }
+        if (!numCols.isScalar) {
+            throw "The argument for the number of columns must be a scalar.";
+        }
+        return new Matrix(numRows.scalarValue(), numCols.scalarValue(), new Array(numRows.scalarValue() * numCols.scalarValue()), "double");
+    }
+    else {
+        throw "Sorry, MatCrab does not support matrices with more than two dimensions.";
+    }
+}
+
+
+function matrixAccumulation(mat: Matrix, dimension: Matrix | undefined, operate: (a:number, b:number) => number) {
+    let dim = 1; // default unless overwritten
+    if (dimension) {
+        if (!dimension.isScalar || dimension.scalarValue() < 1 || !Number.isInteger(dimension.scalarValue())) {
+            throw "The second argument specifying the operation dimension must be a positive integer scalar.";
+        }
+        dim = dimension.scalarValue();
+    } 
+
+    
+    // Special case: if a row/col vector, sum whole thing
+    if (mat.isVector) {
+        return new Matrix(1,1,[mat.data.reduce(operate)], "double"); // will coerce other numeric datatypes to double
+    }
+
+    if (dim === 1) {
+        return mat.accumulateCols(operate);
+    }
+    else if (dim === 2) {
+        return mat.accumulateRows(operate);
+    }
+    else {
+        // Because MatCrab does not support more than two dimensional matrices,
+        // sum with a dimension higher than 2 will always just return the original matrix
+        return mat.clone();
+    }
+}
+
+function matrixUnaryFunction(mat: Matrix, operate: (val:number) => number) {
+    mat = mat.clone();
+    mat.operateAll(operate);
+    return mat;
+}
+
+// function matrixBinaryFunction(mat1: Matrix, mat2: Matrix, operate: (val1:number, val2: number) => number) {
+//     mat = mat.clone();
+//     mat.operateAll(operate);
+//     return mat;
+// }
+
+function matrixFlipud(args: Matrix[]) {
+    let orig = args[0];
+    let newMat = orig.clone();
+    for(let c = 1; c <= orig.cols; ++c) {
+        // Iterate through original and fill new in backward fashion for each column
+        for (let r_orig = 1, r_new = newMat.rows; r_orig <= orig.rows; ++r_orig, --r_new) {
+            newMat.setAt(r_new, c, orig.at(r_orig, c));
+        }
+    }
+    return newMat;
+}
+
+function matrixFliplr(args: Matrix[]) {
+    let orig = args[0];
+    let newMat = orig.clone();
+    for(let r = 1; r <= orig.rows; ++r) {
+        // Iterate through original and fill new in backward fashion for each row
+        for (let c_orig = 1, c_new = newMat.cols; c_orig <= orig.cols; ++c_orig, --c_new) {
+            newMat.setAt(r, c_new, orig.at(r, c_orig));
+        }
+    }
+    return newMat;
+}
+
+function unsupportedMatlabFunction(name: string) {
+    return (args: Matrix[]) => { throw `Sorry, MatCrab does not support the ${name} function.`; };
+}
+
+const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
+    "fliplr" : new MatlabFunction(1, matrixFliplr),
+    "flipud" : new MatlabFunction(1, matrixFlipud),
+    "flip" : new MatlabFunction([1,2], (args: Matrix[]) => {
+        if (args.length === 1) {
+            return matrixFlipud(args);
+        }
+        else {
+            let dimension = args[1];
+            if (!dimension.isScalar || dimension.scalarValue() < 1 || !Number.isInteger(dimension.scalarValue())) {
+                throw "The second argument specifying the flip dimension must be a positive integer scalar.";
+            }
+            
+            let dim = dimension.scalarValue();
+            if (dim === 1) {
+                return matrixFlipud(args);
+            }
+            else if (dim === 2) {
+                return matrixFliplr(args);
+            }
+            else {
+                // flipping along a higher dimension does nothing, since MatCrab only supports 2D matrices
+                return args[0].clone();
+            }
+        }
+    }),
+    "rot90" : new MatlabFunction(1, (args: Matrix[]) => {
+        let orig = args[0];
+        let newMat = Matrix.createSized(orig.cols, orig.rows, "double");
+        
+        // last column becomes first row, 2nd to last column becomes 2nd row, etc.
+        for(let c = orig.cols, r = 1; c >= 1; --c, ++r) {
+            newMat.setRowData(r, orig.colData(c));
+        }
+        return newMat;
+    }),
+    "zeros" : new MatlabFunction([0,MatlabFunction.ARGS_INF], (args: Matrix[]) => createSizedMatrix(args).fill(0)),
+    "ones" : new MatlabFunction([0,MatlabFunction.ARGS_INF], (args: Matrix[]) => createSizedMatrix(args).fill(1)),
+    "eye" : new MatlabFunction([0,MatlabFunction.ARGS_INF], (args: Matrix[]) => {
+        let mat = createSizedMatrix(args).fill(0);
+        let diag_len = Math.min(mat.rows, mat.cols);
+        for(let i = 1; i <= diag_len; ++i) {
+            mat.setAt(i, i, 1);
+        }
+        return mat;
+    }),
+    "magic" : new MatlabFunction(1, (args: Matrix[]) => {
+        let mat = createSizedMatrix(args);
+        let n = mat.rows; // mat will be square with side length n
+        if (n % 2 !== 0) {
+    
+            // de La Loubere's method for odd sizes. start in middle of top row,
+            // move diagonally up/right to fill in n elements.
+            // Then go down one, and repeat with a new diagonal. Do this for n diagonals.
+    
+            // Values range from 1 up through n^2, inclusive
+            let val = 1;
+    
+            // use 0 based indices here, adjust when using setAt below
+            let r = 0;
+            let c = Math.floor(n/2);
+            
+            // Fill in n diagonals
+            for (let d = 0; d < n; ++d) {
+    
+                // Each diagonal has length n
+                for(let i = 0; i < n; ++i) {
+                    mat.setAt(r + 1, c + 1, val++); // +1 to adjust to 1 based index
+                    r = (r - 1 + n) % n; // move up, wrap if necessary
+                    c = (c + 1 + n) % n; // move right, wrap if necessary
+                    // (Note the extra "+ n" avoids negative numbers that would break the % operation)
+                }
+    
+                // Drop down one after filling in each diagonal
+                // There was an extra r - 1 and c + 1 earlier, so we also need to undo those,
+                // meaning we want r + 2 and c - 1 to achieve a net of r + 1
+                r = (r + 2 + n) % n;
+                c = (c - 1 + n) % n;
+    
+            }
+        }
+        // The magic algorithm for even cases is more complicated, so let's just hardcode some for now.
+        else if (n === 2) {
+            mat.setAll([1,4,3,2]);
+        }
+        else if (n === 4) {
+            mat.setAll([16,5,9,4,2,11,7,14,3,10,6,15,13,8,12,1]);
+        }
+        else if (n === 6) {
+            mat.setAll([35,3,31,8,30,4,1,32,9,28,5,36,6,7,2,33,34,29,26,21,22,17,12,13,19,23,27,10,14,18,24,25,20,15,16,11]);
+        }
+        else if (n === 8) {
+            mat.setAll([64,9,17,40,32,41,49,8,2,55,47,26,34,23,15,58,3,54,46,27,35,22,14,59,61,12,20,37,29,44,52,5,60,13,21,36,28,45,53,4,6,51,43,30,38,19,11,62,7,50,42,31,39,18,10,63,57,16,24,33,25,48,56,1]);
+        }
+        else if (n === 10) {
+            mat.setAll([92,98,4,85,86,17,23,79,10,11,99,80,81,87,93,24,5,6,12,18,1,7,88,19,25,76,82,13,94,100,8,14,20,21,2,83,89,95,96,77,15,16,22,3,9,90,91,97,78,84,67,73,54,60,61,42,48,29,35,36,74,55,56,62,68,49,30,31,37,43,51,57,63,69,75,26,32,38,44,50,58,64,70,71,52,33,39,45,46,27,40,41,47,28,34,65,66,72,53,59]);
+        }
+        else {
+            throw "Sorry, MatCrab does not support magic matrices of even size greater than size 10."
+        }
+        return mat;
+    }),
+    "numel" : new MatlabFunction(1, (args: Matrix[]) => Matrix.scalar(args[0].numel, "double")),
+    "length" : new MatlabFunction(1, (args: Matrix[]) => Matrix.scalar(Math.max(args[0].rows, args[0].cols), "double")),
+    "size" : new MatlabFunction(1, (args: Matrix[]) => new Matrix(1, 2, [args[0].rows, args[0].cols], "double")),
+
+    "sum" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a + b)),
+    "prod" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a * b)),
+    "min" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => Math.min(a, b))),
+    "max" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => Math.max(a, b))),
+
+    "sqrt" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.sqrt(val))),
+    "sin" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.sin(val))),
+    "cos" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.cos(val))),
+    "tan" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.tan(val))),
+    "asin" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.asin(val))),
+    "acos" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.acos(val))),
+    "atan" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.atan(val))),
+    // "atan2" : new MatlabFunction(2, (args: Matrix[]) => matrixBinaryFunction(args[0], args[1], (val1:number, val2: number) => Math.atan2(val1, val2))),
+    "sinh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.sinh(val))),
+    "cosh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.cosh(val))),
+    "tanh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.tanh(val))),
+    "asinh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.asinh(val))),
+    "acosh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.acosh(val))),
+    "atanh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.atanh(val))),
+
+    "display": new MatlabFunction([1,MatlabFunction.ARGS_INF], unsupportedMatlabFunction("display"))
+}
+
 export class Environment {
 
     public static readonly global : Environment;
     public static setGlobalEnvironment(elem: JQuery) {
-        (<Environment>Environment.global) = new Environment(elem);
+        let global = new Environment(elem);
+
+        // Add built in functions to global environment
+        for(let functionName in MATLAB_FUNCTIONS) {
+            global.setFunction(functionName, MATLAB_FUNCTIONS[functionName]);
+        }
+
+        asMutable(Environment).global = global;
     }
 
     public static getCurrentEnvironment() {
@@ -711,7 +1032,8 @@ export class Environment {
     }
 
     private readonly elem : JQuery;
-    private readonly vars : {[index:string] : Variable } = {}
+    private readonly vars : {[index:string] : Variable | undefined } = {};
+    private readonly functions : {[index:string] : MatlabFunction | undefined } = {};
     private readonly endValueStack : number[] = [];
 
     public constructor (elem: JQuery) {
@@ -722,24 +1044,44 @@ export class Environment {
         return this.vars.hasOwnProperty(name);
     }
 
-    public getVar(name: string) : Variable | undefined {
+    public lookup(name: string) : Variable | MatlabFunction | undefined {
+        let vari = this.vars[name];
+        if (vari) {
+            // If a variable with that name exists, it is found first,
+            // even if there is also a function with that same name
+            return vari;
+        }
+
+        return this.functions[name]; // or undefined if no functions with that name either
+    }
+
+    public varLookup(name: string) : Variable | undefined {
         return this.vars[name];
     }
 
+    public functionLookup(name: string) : MatlabFunction | undefined {
+        return this.functions[name];
+    }
+
     public setVar(name: string, value: Matrix) {
-        if (this.hasVar(name)){
-            this.vars[name].setValue(value);
+        let vari = this.vars[name];
+        if (vari) {
+            vari.setValue(value);
         }
         else{
-            var v = new Variable(name, value);
+            var newVar = new Variable(name, value);
             if (name !== "ans"){
-                this.elem.append(v.elem);
+                this.elem.append(newVar.elem);
             }
             else{
-                this.elem.prepend(v.elem);
+                this.elem.prepend(newVar.elem);
             }
-            this.vars[name] = v;
+            this.vars[name] = newVar;
         }
+    }
+
+    public setFunction(name: string, func: MatlabFunction) {
+        this.functions[name] = func;
     }
 
     public pushEndValue(value: number) {
@@ -924,7 +1266,7 @@ export abstract class Expression extends CodeConstruct {
         "mult_exp": (a:ASTNode) => new MultExpression(a),
         "unary_exp": (a:ASTNode) => new UnaryOperatorExpression(a),
         "transpose_exp": (a:ASTNode) => new TransposeExpression(a),
-        "call_exp": (a:ASTNode) => new IndexExpression(a),
+        "call_exp": (a:ASTNode) => new IndexOrCallExpression(a),
         "colon_exp": (a:ASTNode) => new ColonExpression(a),
         // "end_exp": EndExpression,
         "integer": (a:ASTNode) => new LiteralExpression(a),
@@ -1032,7 +1374,7 @@ export class Assignment extends CodeConstruct {
     }
 }
 
-// TODO: reduce code duplication between IndexedAssignment and IndexExpression
+// TODO: reduce code duplication between IndexedAssignment and IndexOrCallExpression
 class IndexedAssignment extends Expression {
     
     public readonly targetName: string;
@@ -1053,8 +1395,8 @@ class IndexedAssignment extends Expression {
 
     // TODO: change to execute
     public evaluate() : ExecutedExpressionResult {
-        let vari = Environment.global.getVar(this.targetName);
-        if (!vari) {
+        let vari = Environment.global.lookup(this.targetName);
+        if (!vari || vari instanceof MatlabFunction) {
             return errorResult(new MatlabError(this, "Sorry, I can't find a variable named " + this.targetName));
         }
 
@@ -1649,66 +1991,86 @@ export class TransposeExpression extends Expression {
 
 
 // TODO: This whole thing needs a bit of review
-class IndexExpression extends Expression {
+class IndexOrCallExpression extends Expression {
 
     // currentIndexedVariable : null
     // currentIndexedDimension : 0,
     
     public readonly targetName: string;
-    public readonly indicies: readonly Expression[];
+    public readonly indiciesOrArgs: readonly Expression[];
 
     public readonly subarrayResult?: Subarray;
     public readonly originalMatrix? : Matrix;
 
+    public readonly executedFunction? : MatlabFunction;
+
     public constructor(ast: ASTNode) {
         super(ast);
-        // TODO: may be nice to change grammar here to not have a nested identifier
-        this.targetName = ast["receiver"]["identifier"];
-        this.indicies = ast["args"].map((i:ASTNode) => Expression.create(i));
+        this.targetName = ast["target"];
+        this.indiciesOrArgs = ast["args"].map((i:ASTNode) => Expression.create(i));
     }
 
     protected evaluate() {
-        let vari = Environment.global.getVar(this.targetName);
+        let vari = Environment.global.lookup(this.targetName);
         if (!vari) {
             return errorResult(new MatlabError(this, "Sorry, I can't find a variable or function named " + this.targetName));
         }
 
-        let target = vari.value;
-        (<Mutable<this>>this).originalMatrix = target.clone();
+        if (vari instanceof Variable) {
+            let target = vari.value;
+            (<Mutable<this>>this).originalMatrix = target.clone();
 
-        if (this.indicies.length > 2) {
-            return errorResult(new MatlabError(this, "Sorry, indexing in more that two dimensions is not currently supported."));
-        }
+            if (this.indiciesOrArgs.length > 2) {
+                // TODO: add an error message that suggests students might have shadowed a function, if that is the case. maybe add it here?
+                return errorResult(new MatlabError(this, "Sorry, indexing in more that two dimensions is not currently supported."));
+            }
 
-        let indicesResults = this.indicies.map((index, i) => {
-            Environment.global.pushEndValue(target.length(<1|2>(i+1)));
-            let res = index.execute();
-            Environment.global.popEndValue();
-            return res;
-        });
+            let indicesResults = this.indiciesOrArgs.map((index, i) => {
+                Environment.global.pushEndValue(target.length(<1|2>(i+1))); // 1 or 2 guaranteed from above error check for too many indices
+                let res = index.execute();
+                Environment.global.popEndValue();
+                return res;
+            });
 
-        
-        if (!allSuccess(indicesResults)) {
-            return indicesResults.find(r => {return r.kind !== "success";})!;
-        }
+            
+            if (!allSuccess(indicesResults)) {
+                return indicesResults.find(r => {return r.kind !== "success";})!;
+            }
 
-        if (indicesResults.length === 1) {
-            (<Mutable<this>>this).subarrayResult = LinearSubarray.create(
-                this.indicies[0] instanceof ColonExpression ? ":" : indicesResults[0].value);
+            if (indicesResults.length === 1) {
+                (<Mutable<this>>this).subarrayResult = LinearSubarray.create(
+                    this.indiciesOrArgs[0] instanceof ColonExpression ? ":" : indicesResults[0].value);
+            }
+            else {
+                (<Mutable<this>>this).subarrayResult = CoordinateSubarray.create(
+                    this.indiciesOrArgs[0] instanceof ColonExpression ? ":" : indicesResults[0].value,
+                    this.indiciesOrArgs[1] instanceof ColonExpression ? ":" : indicesResults[1].value);
+            }
+
+            try {
+                this.subarrayResult!.verify(target);
+                return successResult(this.subarrayResult!.readValue(target));
+            }
+            catch(msg) {
+                return errorResult(new MatlabError(this, msg));
+            }
         }
         else {
-            (<Mutable<this>>this).subarrayResult = CoordinateSubarray.create(
-                this.indicies[0] instanceof ColonExpression ? ":" : indicesResults[0].value,
-                this.indicies[1] instanceof ColonExpression ? ":" : indicesResults[1].value);
+            let func = (<Mutable<this>>this).executedFunction = vari;
+            if (!func.isValidNumberOfArgs(this.indiciesOrArgs.length)) {
+                return errorResult(new MatlabError(this, `Invalid number of arguments for the ${this.targetName} function.`));
+            }
+
+            let argResults = this.indiciesOrArgs.map((input) => input.execute());
+
+            if (!allSuccess(argResults)) {
+                return argResults.find(r => {return r.kind !== "success";})!;
+            }
+
+            return func.operate(this, argResults.map((argRes) => argRes.value));
         }
 
-        try {
-            this.subarrayResult!.verify(target);
-            return successResult(this.subarrayResult!.readValue(target));
-        }
-        catch(msg) {
-            return errorResult(new MatlabError(this, msg));
-        }
+        
 
     }
 
@@ -1722,17 +2084,23 @@ class IndexExpression extends Expression {
         
         if (this.originalMatrix && this.subarrayResult) {
             valueHtml = this.subarrayResult.visualize_selection(this.originalMatrix);
+            return `<div class="matlab-exp-index">
+                ${valueHtml}
+                <div class="matlab-identifier-name">${this.targetName}</div>
+            </div>`
             
+        }
+        else if (this.executedFunction) {
+            return `<div class="matlab-exp-call">
+                ${this.targetName}(
+                    ${this.indiciesOrArgs.map((arg) => `<div class="matlab-call-arg">${arg.visualize_html()}</div>`).join(",")}
+                )</div>`
         }
         else {
             //TODO
-            valueHtml = "";
+            return "";
         }
 
-        return `<div class="matlab-exp-index">
-            ${valueHtml}
-            <div class="matlab-identifier-name">${this.targetName}</div>
-        </div>`
     }
 }
 
@@ -1790,8 +2158,8 @@ export class IdentifierExpression extends Expression {
 
     protected evaluate() {
         let env = Environment.global;
-        let vari = env.getVar(this.name);
-        if (vari) {
+        let vari = env.lookup(this.name);
+        if (vari && !(vari instanceof MatlabFunction)) {
             return successResult(vari.value);
         }
         else {

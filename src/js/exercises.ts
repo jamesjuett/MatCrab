@@ -14,7 +14,7 @@ class VariableExercise {
     }
 
     public check() {
-        let v = Environment.getCurrentEnvironment().getVar(this.variableName);
+        let v = Environment.getCurrentEnvironment().varLookup(this.variableName);
         return v && v.value.equals(this.targetValue);
     }
 
@@ -29,7 +29,7 @@ class VariableExercise {
         return `
             <div style="position: relative">
                 <span class="badge matlab-var-badge">${this.variableName}</span>
-                ${this.targetValue.visualize_html()}
+                <div class="matcrab-visualization">${this.targetValue.visualize_html()}</div>
                 <div>${isComplete ? "complete!" : "pending"}</div>
             </div>
         `;
