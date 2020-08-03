@@ -29,7 +29,7 @@ class VariableExercise {
         return `
             <div style="position: relative">
                 <span class="badge matlab-var-badge">${this.variableName}</span>
-                ${this.targetValue.visualize_html()}
+                <div class="matcrab-visualization">${this.targetValue.visualize_html()}</div>
                 <div>${isComplete ? "complete!" : "pending"}</div>
             </div>
         `;
