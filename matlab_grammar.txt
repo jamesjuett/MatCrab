@@ -30,9 +30,24 @@
 
 
 start
+  = StatementGroup
+
+StatementGroup
+  = _ statements:(s:Statement (";"/[\n\r]/__)*  {return s;} )* {
+    if (statements.length === 1) {
+      return statements[0];
+    }
+    else {
+      return {
+        what: "statement_group",
+        statements: statements
+      };
+    }
+  }
+
+Statement
   = AssignmentStatement
   / Exp
-
 
 AssignmentStatement
   = i:CallExp _ "=" _ e:Exp {
@@ -52,7 +67,7 @@ AssignmentStatement
 
 // Note: appears to be group by ; first, then by , or space
 MatrixExp
-  = "[" _ head:RowExp tail:(_ ";" _ r:RowExp {return r;})* _ "]" {
+  = "[" _ head:RowExp tail:(_ (";"/[\r\n])+ _ r:RowExp {return r;})* _ "]" {
     if (tail.length === 0) { return head;}
     tail.unshift(head);
     return {
@@ -195,7 +210,7 @@ IdentifierChar = [a-zA-Z0-9_]
 IdentifierFirstChar = [a-zA-Z]
 
 _ "whitespace"
-  = [ \t\n\r]*
+  = [ \t]*
 
 __ "whitespace"
-  = [ \t\n\r]+
+  = [ \t]+

@@ -744,7 +744,7 @@ export class Variable implements Visualizable {
     }
 }
 
-type MatlabFunctionFuncType = (args: Matrix[]) => Matrix;
+type MatlabFunctionFuncType = (args: Matrix[], construct: CodeConstruct) => Matrix;
 
 export class MatlabFunction {
 
@@ -762,7 +762,7 @@ export class MatlabFunction {
 
     public operate(construct: CodeConstruct, args: Matrix[]) {
         try {
-            return successResult(this.func(args));
+            return successResult(this.func(args, construct));
         }
         catch(msg) {
             return errorResult(new MatlabError(construct, msg));
@@ -1010,34 +1010,42 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
     "acosh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.acosh(val))),
     "atanh" : new MatlabFunction(1, (args: Matrix[]) => matrixUnaryFunction(args[0], (val:number) => Math.atanh(val))),
 
-    "display": new MatlabFunction([1,MatlabFunction.ARGS_INF], unsupportedMatlabFunction("display"))
+    "display": new MatlabFunction([1,MatlabFunction.ARGS_INF], unsupportedMatlabFunction("display")),
+
+    "imshow": new MatlabFunction(1, (args: Matrix[], construct: CodeConstruct) => {
+        // construct.environment.showImage()
+        return new Matrix(1, 1, [1], "double")
+    })
+}
+
+export interface EnvironmentListener {
+    onVariableSet(vari: Variable): void;
 }
 
 export class Environment {
 
     public static readonly global : Environment;
+
     public static setGlobalEnvironment(elem: JQuery) {
         let global = new Environment(elem);
-
-        // Add built in functions to global environment
-        for(let functionName in MATLAB_FUNCTIONS) {
-            global.setFunction(functionName, MATLAB_FUNCTIONS[functionName]);
-        }
 
         asMutable(Environment).global = global;
     }
 
-    public static getCurrentEnvironment() {
-        return this.global;
-    }
-
-    private readonly elem : JQuery;
+    private readonly elem? : JQuery;
     private readonly vars : {[index:string] : Variable | undefined } = {};
     private readonly functions : {[index:string] : MatlabFunction | undefined } = {};
     private readonly endValueStack : number[] = [];
 
-    public constructor (elem: JQuery) {
+    private readonly listeners: EnvironmentListener[] = [];
+
+    public constructor (elem?: JQuery) {
         this.elem = elem;
+
+        // Add built in functions to environment
+        for(let functionName in MATLAB_FUNCTIONS) {
+            this.setFunction(functionName, MATLAB_FUNCTIONS[functionName]);
+        }
     }
 
     public hasVar(name : string) {
@@ -1069,15 +1077,19 @@ export class Environment {
             vari.setValue(value);
         }
         else{
-            var newVar = new Variable(name, value);
-            if (name !== "ans"){
-                this.elem.append(newVar.elem);
+            vari = new Variable(name, value);
+            if (this.elem) {
+                if (name !== "ans"){
+                    this.elem.append(vari.elem);
+                }
+                else{
+                    this.elem.prepend(vari.elem);
+                }
             }
-            else{
-                this.elem.prepend(newVar.elem);
-            }
-            this.vars[name] = newVar;
+            this.vars[name] = vari;
         }
+
+        this.listeners.forEach(l => l.onVariableSet(vari!));
     }
 
     public setFunction(name: string, func: MatlabFunction) {
@@ -1091,6 +1103,14 @@ export class Environment {
     public popEndValue() {
         this.endValueStack.pop();
     }
+
+    public getEndValue() : number | undefined {
+        return this.endValueStack[this.endValueStack.length - 1];
+    }
+
+    public addListener(listener: EnvironmentListener) {
+        this.listeners.push(listener);
+    }
 }
 
 export type ASTNode = any;
@@ -1103,22 +1123,27 @@ export abstract class CodeConstruct implements Visualizable {
         return $('<svg class="matlab-error-svg"><line x1="-20" y1="80%" x2="100%" y2="20%" style="stroke:rgba(255,0,0, 0.3);stroke-width:5" transform="translate(10,0)"></line><line style="stroke:rgba(255,0,0, 0.3);stroke-width:5" y2="80%" x2="100%" y1="20%" x1="-20" transform="translate(10,0)"></line></svg>');
     }
 
-    public static create(ast: ASTNode) {
+    public static create(ast: ASTNode, env: Environment) {
+        if (ast["what"] === "statement_group") {
+            return new StatementGroup(ast, env);
+        }
         if (ast["what"] === "assignment") {
-            return new Assignment(ast);
+            return new Assignment(ast, env);
         }
         else if (ast["what"] === "indexed_assignment") {
-            return new IndexedAssignment(ast);
+            return new IndexedAssignment(ast, env);
         }
         else {
-            return Expression.create(ast);
+            return Expression.create(ast, env);
         }
     }
 
     protected readonly ast: ASTNode;
+    public readonly env: Environment;
 
-    protected constructor(ast: ASTNode) {
+    protected constructor(ast: ASTNode, env: Environment) {
         this.ast = ast;
+        this.env = env;
     }
 
     public abstract execute(): ExecutedExpressionResult;
@@ -1247,31 +1272,32 @@ export abstract class Expression extends CodeConstruct {
 
     public readonly result: ExpressionResult = UNEXECUTED;
 
-    public static create(ast: ASTNode) {
-        return this.grammarToSubclass[ast["what"]](ast);
+    public static create(ast: ASTNode, env: Environment) {
+        // console.log(ast["what"]);
+        return this.grammarToSubclass[ast["what"]](ast, env);
     }
 
     // Map from "what" key in src generated by grammar to
     // the name of the subclass in the code.
     // TODO: Revise to use factory pattern or abstract factory pattern?
-    private static grammarToSubclass : {[index: string]: (a: ASTNode) => Expression} = {
-        "matrix_exp": (a:ASTNode) => new MatrixExpression(a),
-        "row_exp": (a:ASTNode) => new RowExpression(a),
-        "range_exp": (a:ASTNode) => new RangeExpression(a),
-        "or_exp": (a:ASTNode) => new MatrixOrExpression(a),
-        "and_exp": (a:ASTNode) => new MatrixAndExpression(a),
-        "eq_exp": (a:ASTNode) => new EqualityExpression(a),
-        "rel_exp": (a:ASTNode) => new RelationalExpression(a),
-        "add_exp": (a:ASTNode) => new AddExpression(a),
-        "mult_exp": (a:ASTNode) => new MultExpression(a),
-        "unary_exp": (a:ASTNode) => new UnaryOperatorExpression(a),
-        "transpose_exp": (a:ASTNode) => new TransposeExpression(a),
-        "call_exp": (a:ASTNode) => new IndexOrCallExpression(a),
-        "colon_exp": (a:ASTNode) => new ColonExpression(a),
-        // "end_exp": EndExpression,
-        "integer": (a:ASTNode) => new LiteralExpression(a),
-        "float": (a:ASTNode) => new LiteralExpression(a),
-        "identifier": (a:ASTNode) => new IdentifierExpression(a)
+    private static grammarToSubclass : {[index: string]: (a: ASTNode, env: Environment) => Expression} = {
+        "matrix_exp": (a: ASTNode, env: Environment) => new MatrixExpression(a, env),
+        "row_exp": (a: ASTNode, env: Environment) => new RowExpression(a, env),
+        "range_exp": (a: ASTNode, env: Environment) => new RangeExpression(a, env),
+        "or_exp": (a: ASTNode, env: Environment) => new MatrixOrExpression(a, env),
+        "and_exp": (a: ASTNode, env: Environment) => new MatrixAndExpression(a, env),
+        "eq_exp": (a: ASTNode, env: Environment) => new EqualityExpression(a, env),
+        "rel_exp": (a: ASTNode, env: Environment) => new RelationalExpression(a, env),
+        "add_exp": (a: ASTNode, env: Environment) => new AddExpression(a, env),
+        "mult_exp": (a: ASTNode, env: Environment) => new MultExpression(a, env),
+        "unary_exp": (a: ASTNode, env: Environment) => new UnaryOperatorExpression(a, env),
+        "transpose_exp": (a: ASTNode, env: Environment) => new TransposeExpression(a, env),
+        "call_exp": (a: ASTNode, env: Environment) => new IndexOrCallExpression(a, env),
+        "colon_exp": (a: ASTNode, env: Environment) => new ColonExpression(a, env),
+        "end_exp": (a: ASTNode, env: Environment) => new EndExpression(a, env),
+        "integer": (a: ASTNode, env: Environment) => new LiteralExpression(a, env),
+        "float": (a: ASTNode, env: Environment) => new LiteralExpression(a, env),
+        "identifier": (a: ASTNode, env: Environment) => new IdentifierExpression(a, env)
     }
 
     private setResult(result: ExecutedExpressionResult) {
@@ -1330,10 +1356,10 @@ export class Assignment extends CodeConstruct {
 
     public readonly updatedValue?: Matrix;
 
-    constructor(ast: ASTNode) {
-        super(ast);
-        this.lhs = <IdentifierExpression>Expression.create(ast["identifier"])
-        this.rhs = Expression.create(ast["exp"]);
+    constructor(ast: ASTNode, env: Environment) {
+        super(ast, env);
+        this.lhs = <IdentifierExpression>Expression.create(ast["identifier"], env)
+        this.rhs = Expression.create(ast["exp"], env);
     }
 
     public execute() {
@@ -1344,7 +1370,7 @@ export class Assignment extends CodeConstruct {
             return rhsResult;
         }
 
-        let env = Environment.global;
+        let env = this.env;
         let name = this.lhs.name;
 
         env.setVar(name, rhsResult.value);
@@ -1385,17 +1411,17 @@ class IndexedAssignment extends Expression {
     public readonly originalMatrix?: Matrix;
     public readonly updatedMatrix?: Matrix;
 
-    public constructor(ast: ASTNode) {
-        super(ast);
+    public constructor(ast: ASTNode, env: Environment) {
+        super(ast, env);
         // TODO: may be nice to change grammar here to not have a nested identifier
-        this.targetName = ast["lhs"]["receiver"]["identifier"];
-        this.indicies = ast["lhs"]["args"].map((i:ASTNode) => Expression.create(i));
-        this.rhs = Expression.create(ast["rhs"]);
+        this.targetName = ast["lhs"]["target"];
+        this.indicies = ast["lhs"]["args"].map((i:ASTNode) => Expression.create(i, env));
+        this.rhs = Expression.create(ast["rhs"], env);
     }
 
     // TODO: change to execute
     public evaluate() : ExecutedExpressionResult {
-        let vari = Environment.global.lookup(this.targetName);
+        let vari = this.env.lookup(this.targetName);
         if (!vari || vari instanceof MatlabFunction) {
             return errorResult(new MatlabError(this, "Sorry, I can't find a variable named " + this.targetName));
         }
@@ -1414,9 +1440,9 @@ class IndexedAssignment extends Expression {
         }
 
         let indicesResults = this.indicies.map((index, i) => {
-            Environment.global.pushEndValue(target.length(<1|2>(i+1)));
+            this.env.pushEndValue(target.length(<1|2>(i+1)));
             let res = index.execute();
-            Environment.global.popEndValue();
+            this.env.popEndValue();
             return res;
         });
         
@@ -1487,13 +1513,49 @@ class IndexedAssignment extends Expression {
     }
 }
 
+export type Statement = Assignment | IndexedAssignment | Expression;
+
+export class StatementGroup extends CodeConstruct {
+    
+    public readonly statements: readonly Statement[];
+
+    public readonly updatedValue?: Matrix;
+
+    private lastStatementExecuted?: Statement;
+
+    constructor(ast: ASTNode, env: Environment) {
+        super(ast, env);
+        this.statements = ast.statements.map((sAst: ASTNode) => CodeConstruct.create(sAst, env));
+        assert(this.statements.length > 0);
+    }
+
+    public execute() {
+
+        let result: ExecutedExpressionResult;
+        for(let i = 0; i < this.statements.length; ++i) {
+            let statement = this.statements[i];
+            this.lastStatementExecuted = statement;
+            result = statement.execute();
+            if (result.kind !== "success") {
+                return result;
+            }
+        }
+
+        return result!; // ! because statements length cannot be 0 (see ctor)
+    }
+
+    public visualize_html() {
+        return this.lastStatementExecuted!.visualize_html();
+    }
+}
+
 class MatrixExpression extends Expression {
 
     public readonly rows: readonly Expression[];
 
-    public constructor(ast: ASTNode) {
-        super(ast);
-        this.rows = ast["rows"].map((r:any) => Expression.create(r));
+    public constructor(ast: ASTNode, env: Environment) {
+        super(ast, env);
+        this.rows = ast["rows"].map((r:any) => Expression.create(r, env));
     }
 
     protected evaluate() {
@@ -1557,9 +1619,9 @@ class RowExpression extends Expression {
     
     public readonly cols: readonly Expression[];
 
-    public constructor(ast: ASTNode) {
-        super(ast);
-        this.cols = ast["cols"].map((r:any) => Expression.create(r));
+    public constructor(ast: ASTNode, env: Environment) {
+        super(ast, env);
+        this.cols = ast["cols"].map((r:any) => Expression.create(r, env));
     }
 
     protected evaluate() {
@@ -1627,11 +1689,11 @@ class RangeExpression extends Expression {
     public readonly end: Expression;
     public readonly step: Expression | null;
 
-    public constructor(ast: ASTNode) {
-        super(ast);
-        this.start = Expression.create(ast.start);
-        this.end = Expression.create(ast.end);
-        this.step = ast.step ? Expression.create(ast.step) : null;
+    public constructor(ast: ASTNode, env: Environment) {
+        super(ast, env);
+        this.start = Expression.create(ast.start, env);
+        this.end = Expression.create(ast.end, env);
+        this.step = ast.step ? Expression.create(ast.step, env) : null;
     }
 
     protected evaluate() {
@@ -1739,12 +1801,12 @@ abstract class BinaryOperatorExpression extends Expression {
     public readonly right: Expression;
     public readonly op: string;
 
-    public constructor(ast: ASTNode) {
-        super(ast);
+    public constructor(ast: ASTNode, env: Environment) {
+        super(ast, env);
         this.op = ast.op;
 
-        this.left = Expression.create(ast.left);
-        this.right = Expression.create(ast.right);
+        this.left = Expression.create(ast.left, env);
+        this.right = Expression.create(ast.right, env);
     }
 
     protected abstract readonly dataType: DataType;
@@ -1898,11 +1960,11 @@ export class UnaryOperatorExpression extends Expression {
     public readonly operand: Expression;
     public readonly op: UnaryOperator;
 
-    public constructor(ast: ASTNode) {
-        super(ast);
+    public constructor(ast: ASTNode, env: Environment) {
+        super(ast, env);
         this.op = ast.op;
 
-        this.operand = Expression.create(ast.sub);
+        this.operand = Expression.create(ast.sub, env);
     }
 
     private readonly operators : {[op in UnaryOperator]: (n:number) => number} = {
@@ -1953,11 +2015,11 @@ export class TransposeExpression extends Expression {
     public readonly operand: Expression;
     public readonly numTransposes: number;
 
-    public constructor(ast: ASTNode) {
-        super(ast);
+    public constructor(ast: ASTNode, env: Environment) {
+        super(ast, env);
         this.numTransposes = ast.transposes.length;
 
-        this.operand = Expression.create(ast.sub);
+        this.operand = Expression.create(ast.sub, env);
     }
 
     protected evaluate() {
@@ -2004,14 +2066,14 @@ class IndexOrCallExpression extends Expression {
 
     public readonly executedFunction? : MatlabFunction;
 
-    public constructor(ast: ASTNode) {
-        super(ast);
+    public constructor(ast: ASTNode, env: Environment) {
+        super(ast, env);
         this.targetName = ast["target"];
-        this.indiciesOrArgs = ast["args"].map((i:ASTNode) => Expression.create(i));
+        this.indiciesOrArgs = ast["args"].map((i:ASTNode) => Expression.create(i, env));
     }
 
     protected evaluate() {
-        let vari = Environment.global.lookup(this.targetName);
+        let vari = this.env.lookup(this.targetName);
         if (!vari) {
             return errorResult(new MatlabError(this, "Sorry, I can't find a variable or function named " + this.targetName));
         }
@@ -2026,9 +2088,9 @@ class IndexOrCallExpression extends Expression {
             }
 
             let indicesResults = this.indiciesOrArgs.map((index, i) => {
-                Environment.global.pushEndValue(target.length(<1|2>(i+1))); // 1 or 2 guaranteed from above error check for too many indices
+                this.env.pushEndValue(target.length(<1|2>(i+1))); // 1 or 2 guaranteed from above error check for too many indices
                 let res = index.execute();
-                Environment.global.popEndValue();
+                this.env.popEndValue();
                 return res;
             });
 
@@ -2126,8 +2188,8 @@ export class LiteralExpression extends Expression {
 
     private readonly literalValue : Matrix;
     
-    public constructor(ast: ASTNode) {
-        super(ast);
+    public constructor(ast: ASTNode, env: Environment) {
+        super(ast, env);
         this.literalValue = Matrix.scalar(this.ast["value"], "double");
     }
 
@@ -2151,13 +2213,13 @@ export class IdentifierExpression extends Expression {
 
     public readonly name: string;
 
-    public constructor(ast: ASTNode) {
-        super(ast);
+    public constructor(ast: ASTNode, env: Environment) {
+        super(ast, env);
         this.name = ast["identifier"];
     }
 
     protected evaluate() {
-        let env = Environment.global;
+        let env = this.env;
         let vari = env.lookup(this.name);
         if (vari && !(vari instanceof MatlabFunction)) {
             return successResult(vari.value);
@@ -2171,6 +2233,30 @@ export class IdentifierExpression extends Expression {
         return `<div class="matlab-identifier">
             ${this.result.kind === "success" ? this.result.value.visualize_html() : ""}
             <div class="matlab-identifier-name">${this.name}</div>
+        </div>`;
+    }
+}
+
+export class EndExpression extends Expression {
+    
+    public constructor(ast: ASTNode, env: Environment) {
+        super(ast, env);
+    }
+
+    protected evaluate() {
+        let endValue = this.env.getEndValue();
+        if (endValue) {
+            return successResult(Matrix.scalar(endValue, "double"));
+        }
+        else {
+            return errorResult(new MatlabError(this, "The end keyword is only allowed within the context of an indexing expression."));
+        }
+    }
+
+    public visualize_expr() {
+        return `<div class="matlab-identifier">
+            ${this.result.kind === "success" ? this.result.value.visualize_html() : ""}
+            <div class="matlab-identifier-name">end</div>
         </div>`;
     }
 }

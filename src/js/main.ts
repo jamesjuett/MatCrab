@@ -10,7 +10,7 @@ import { CodeConstruct, Environment, MatlabError } from "./matlab";
 
 $(document).ready(function(){
 
-    Environment.setGlobalEnvironment($("#vars"));
+    let globalWorkspace = new Environment($("#vars"));
     
     var queryString = getQueryString();
 
@@ -22,7 +22,7 @@ $(document).ready(function(){
         var statements = JSON.parse(queryString["pre"]);
         for (var i = 0; i < statements.length; ++i){
             var srcText = matlab_parse(statements[i]);
-            var cc = CodeConstruct.create(srcText);
+            var cc = CodeConstruct.create(srcText, globalWorkspace);
             cc.execute();
         }
     }
@@ -33,7 +33,7 @@ $(document).ready(function(){
         if (text.length > 0) {
             try {
                 var src = matlab_parse(text);
-                var cc = CodeConstruct.create(src);
+                var cc = CodeConstruct.create(src, globalWorkspace);
                 var result = cc.execute();
                 vis.html(cc.visualize_html());
                 //var result = cc.evaluate();

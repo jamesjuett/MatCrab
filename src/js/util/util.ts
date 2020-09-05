@@ -5,7 +5,7 @@ export function asMutable<T>(obj: T) : Mutable<T> {
     return <Mutable<T>>obj;
 }
 
-export function assert(condition: any, message = "") {
+export function assert(condition: any, message = "") : asserts condition {
     if (!condition)
         throw Error("Assert failed: " + message);
 };
