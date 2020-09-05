@@ -143,7 +143,7 @@ export class Matrix implements Visualizable {
         if (dimension === 1) {
             return this.rows;
         }
-        else{ // if (dimension === 2) {
+        else { // if (dimension === 2) {
             return this.cols;
         }
     }
@@ -1440,7 +1440,14 @@ class IndexedAssignment extends Expression {
         }
 
         let indicesResults = this.indicies.map((index, i) => {
-            this.env.pushEndValue(target.length(<1|2>(i+1)));
+            if (this.indicies.length === 1) {
+                // For linear indexing, end keyword evaluates to numel
+                this.env.pushEndValue(target.numel);
+            }
+            else {
+                // For row/column indexing, end keyword evaluates to length along index dimension
+                this.env.pushEndValue(target.length(<1|2>(i+1)));
+            }
             let res = index.execute();
             this.env.popEndValue();
             return res;
@@ -2088,7 +2095,14 @@ class IndexOrCallExpression extends Expression {
             }
 
             let indicesResults = this.indiciesOrArgs.map((index, i) => {
-                this.env.pushEndValue(target.length(<1|2>(i+1))); // 1 or 2 guaranteed from above error check for too many indices
+                if (this.indiciesOrArgs.length === 1) {
+                    // For linear indexing, end keyword evaluates to numel
+                    this.env.pushEndValue(target.numel);
+                }
+                else {
+                    // For row/column indexing, end keyword evaluates to length along index dimension
+                    this.env.pushEndValue(target.length(<1|2>(i+1))); // 1 or 2 guaranteed from above error check for too many indices
+                }
                 let res = index.execute();
                 this.env.popEndValue();
                 return res;
