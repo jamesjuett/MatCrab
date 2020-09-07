@@ -12,9 +12,7 @@
     table-layout: fixed;
 }
 
-.matlab-table td,
-.matlab-index td,
-.matlab-range td {
+.matlab-matrix-cell {
     border: 1px solid #555;
     padding: 3px;
     text-align: center;
@@ -60,13 +58,33 @@
     font-size: 0.8em;
 }
 
-.matlab-index td.selected {
+.matlab-index .matlab-matrix-cell.selected {
     color: inherit;
     /*background-color : red;*/
 }
 
-.matlab-index td.selected > .highlight {
+.matlab-index .matlab-matrix-cell.selected > .highlight {
     background: none;
+}
+
+.matlab-column-index {
+    text-align-last: center;
+    font-size: 0.8em;
+}
+
+.matlab-column-index.selected {
+    font-size: 1em;
+    font-weight: bold;
+}
+
+.matlab-row-index {
+    font-size: 0.8em;
+    padding-right: 0.3em;
+}
+
+.matlab-row-index.selected {
+    font-size: 1em;
+    font-weight: bold;
 }
 
 .matlab-range {

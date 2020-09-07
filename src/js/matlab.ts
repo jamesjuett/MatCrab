@@ -205,7 +205,7 @@ export class Matrix implements Visualizable {
             let tr = $("<tr></tr>");
             table.append(tr);
             for (let c = 1; c <= this.cols; ++c) {
-                let td = $("<td></td>");
+                let td = $("<td class='matlab-matrix-cell'></td>");
                 let temp = $("<div></div>");
                 temp.addClass("matlab-scalar");
                 if (this.dataType === "logical"){
@@ -245,6 +245,8 @@ abstract class Subarray {
 
     public abstract visualize_selection(matrix: Matrix) : string;
 
+    public abstract indexingText() : string;
+
     // @throws {string} If the value cannot be determined (e.g. subarray specifies out-of-bound indices).
     public abstract readValue(source: Matrix) : Matrix;
 
@@ -276,27 +278,50 @@ class CoordinateSubarray extends Subarray {
         this.colIndexer = colIndexer;
     }
 
+    public indexingText() {
+        return `(${this.rowIndexer.indexingText()}, ${this.colIndexer.indexingText()})`
+    }
+
     public visualize_selection(matrix: Matrix) {
         var table = $("<table></table>");
         table.addClass("matlab-index");
-        table.css("background-color", matrix.color);
         let rowIndicesSet = new Set(this.rowIndexer.getSelectedIndices(matrix));
         let colIndicesSet = new Set(this.colIndexer.getSelectedIndices(matrix));
+
+        // Top row for column-coordinate indices
+        let columnIndices = $("<tr></tr>").appendTo(table);
+
+        // Append top-left corner empty cell
+        columnIndices.append($("<td></td>"))
+
+        for(let c = 1; c <= matrix.cols; ++c) {
+            let columnIndexElem = $(`<td class='matlab-column-index'>${c}</td>`)
+                .appendTo(columnIndices);
+            if (colIndicesSet.has(c)) {
+                columnIndexElem.addClass("selected");
+            }
+        }
+
         for (var r = 1; r <= matrix.rows; ++r) {
             var tr = $("<tr></tr>");
             table.append(tr);
+            let rowIndexElem = $(`<td class='matlab-row-index'>${r}</td>`)
+                .appendTo(tr);
+            if (rowIndicesSet.has(r)) {
+                rowIndexElem.addClass("selected");
+            }
             for (var c = 1; c <= matrix.cols; ++c) {
-                let td = $("<td><div class='highlight'></div></td>");
-
+                let td = $("<td class='matlab-matrix-cell'><div class='highlight'></div></td>");
+                td.css("background-color", matrix.color);
                 if (rowIndicesSet.has(r) &&
                     colIndicesSet.has(c)) {
                     td.addClass("selected");
                 }
 
-                var rawIndexElem = $("<div></div>");
-                rawIndexElem.addClass("matlab-raw-index");
-                rawIndexElem.html("" + matrix.linearIndex(r,c));
-                td.append(rawIndexElem);
+                // var rawIndexElem = $("<div></div>");
+                // rawIndexElem.addClass("matlab-raw-index");
+                // rawIndexElem.html("" + matrix.linearIndex(r,c));
+                // td.append(rawIndexElem);
 
                 var temp = $("<div></div>");
                 temp.addClass("matlab-scalar");
@@ -395,6 +420,8 @@ abstract class CoordinateIndexer {
 
     public abstract getSelectedIndices(mat: Matrix) : readonly number[];
 
+    public abstract indexingText() : string;
+
     public abstract verify(mat: Matrix) : void;
 
 }
@@ -410,6 +437,10 @@ class RegularCoordinateIndexer extends CoordinateIndexer {
     
     public getSelectedIndices(mat: Matrix): readonly number[] {
         return this.selectedIndices;
+    }
+
+    public indexingText() {
+        return this.selectedIndices.join(",");
     }
 
     public verify(mat: Matrix) {
@@ -433,6 +464,10 @@ class AllCoordinateIndexer extends CoordinateIndexer {
         return MatlabMath.range(1, mat.length(this.dimension));
     }
 
+    public indexingText() {
+        return ":";
+    }
+
     public verify(mat: Matrix) {
         // always valid
     }
@@ -454,6 +489,10 @@ class LogicalCoordinateIndexer extends CoordinateIndexer {
     
     public getSelectedIndices(mat: Matrix): readonly number[] {
         return this.selectedIndices;
+    }
+
+    public indexingText() {
+        return "logical";
     }
 
     public verify(mat: Matrix) {
@@ -528,6 +567,10 @@ class RegularLinearSubarray extends LinearSubarray {
         }
     }
 
+    public indexingText() {
+        return `(${this.selectedIndices.data.join(",")})`;
+    }
+
     public visualize_selection(mat: Matrix) {
         var table = $("<table></table>");
         table.addClass("matlab-index");
@@ -537,7 +580,7 @@ class RegularLinearSubarray extends LinearSubarray {
             var tr = $("<tr></tr>");
             table.append(tr);
             for (var c = 1; c <= mat.cols; ++c) {
-                let td = $("<td><div class='highlight'></div></td>");
+                let td = $("<td class='matlab-matrix-cell'><div class='highlight'></div></td>");
 
                 if (indicesSet.has(mat.linearIndex(r, c))) {
                     td.addClass("selected");
@@ -585,6 +628,10 @@ class AllLinearSubarray extends LinearSubarray {
         }
     }
 
+    public indexingText() {
+        return `(:)`
+    }
+
     public visualize_selection(mat: Matrix) {
         var table = $("<table></table>");
         table.addClass("matlab-index");
@@ -593,7 +640,7 @@ class AllLinearSubarray extends LinearSubarray {
             var tr = $("<tr></tr>");
             table.append(tr);
             for (var c = 1; c <= mat.cols; ++c) {
-                let td = $("<td><div class='highlight'></div></td>");
+                let td = $("<td class='matlab-matrix-cell'><div class='highlight'></div></td>");
                 td.addClass("selected");
 
                 var rawIndexElem = $("<div></div>");
@@ -668,6 +715,10 @@ class LogicalLinearSubarray extends LinearSubarray {
         }
     }
 
+    public indexingText() {
+        return "(logical)";
+    }
+
     public visualize_selection(mat: Matrix) {
         var table = $("<table></table>");
         table.addClass("matlab-index");
@@ -677,7 +728,7 @@ class LogicalLinearSubarray extends LinearSubarray {
             var tr = $("<tr></tr>");
             table.append(tr);
             for (var c = 1; c <= mat.cols; ++c) {
-                var td = $("<td><div class='highlight'></div></td>");
+                var td = $("<td class='matlab-matrix-cell'><div class='highlight'></div></td>");
                 let isSelected = indicesSet.has(mat.linearIndex(r, c));
                 if (isSelected){
                     td.addClass("selected");
@@ -1498,7 +1549,7 @@ class IndexedAssignment extends Expression {
                 <div class="matlab-exp-index">
                     ${valueHtml}
                     <div class="matlab-identifier-name">
-                        ${this.targetName}
+                        ${this.subarrayResult ? this.targetName + this.subarrayResult.indexingText() : this.targetName}
                     </div>
                 </div>
                 
@@ -1614,7 +1665,7 @@ class MatrixExpression extends Expression {
         for (var i = 0; i < rows.length; ++i) {
             var tr = $("<tr></tr>");
             table.append(tr);
-            var td = $("<td></td>");
+            var td = $("<td class='matlab-matrix-cell'></td>");
             tr.append(td);
             td.html(rows[i].visualize_html({contained: true}));
         }
@@ -1680,7 +1731,7 @@ class RowExpression extends Expression {
             table.append(tr);
 
             for (var i = 0; i < cols.length; ++i) {
-                var td = $("<td></td>");
+                var td = $("<td class='matlab-matrix-cell'></td>");
                 tr.append(td);
                 var col = cols[i];
                 td.html(cols[i].visualize_html({contained: true}));
@@ -1758,7 +1809,7 @@ class RangeExpression extends Expression {
             let rowHtml = "";
             for (var i = 1; i <= value.numel; ++i) {
                 rowHtml +=
-                `<td>
+                `<td class='matlab-matrix-cell'>
                     ${scalarHtml(value.atLinear(i))}
                 </td>`
             }
@@ -1790,9 +1841,9 @@ class RangeExpression extends Expression {
                         <th>end</th>
                     </tr>
                     <tr>
-                        <td>${this.start.visualize_html()}</td>
-                        ${this.step ? "<td>" + this.step.visualize_html() + "</td>" : ""}
-                        <td>${this.end.visualize_html()}</td>
+                        <td class='matlab-matrix-cell'>${this.start.visualize_html()}</td>
+                        ${this.step ? "<td class='matlab-matrix-cell'>" + this.step.visualize_html() + "</td>" : ""}
+                        <td class='matlab-matrix-cell'>${this.end.visualize_html()}</td>
                     </tr>
                 </table>
             </div>
@@ -2162,7 +2213,9 @@ class IndexOrCallExpression extends Expression {
             valueHtml = this.subarrayResult.visualize_selection(this.originalMatrix);
             return `<div class="matlab-exp-index">
                 ${valueHtml}
-                <div class="matlab-identifier-name">${this.targetName}</div>
+                <div class="matlab-identifier-name">
+                ${this.subarrayResult ? this.targetName + this.subarrayResult.indexingText() : this.targetName}
+                </div>
             </div>`
             
         }
