@@ -1064,8 +1064,10 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
     "display": new MatlabFunction([1,MatlabFunction.ARGS_INF], unsupportedMatlabFunction("display")),
 
     "imshow": new MatlabFunction(1, (args: Matrix[], construct: CodeConstruct) => {
-        // construct.environment.showImage()
-        return new Matrix(1, 1, [1], "double")
+        
+        construct.env.imshow(args[0]);
+
+        return new Matrix(1, 1, [1], "double");
     })
 }
 
@@ -1088,10 +1090,16 @@ export class Environment {
     private readonly functions : {[index:string] : MatlabFunction | undefined } = {};
     private readonly endValueStack : number[] = [];
 
+    private readonly imshowFigure?: ImshowFigure;
+
     private readonly listeners: EnvironmentListener[] = [];
 
-    public constructor (elem?: JQuery) {
+    public constructor (elem?: JQuery, imshowCanvas?: JQuery<HTMLCanvasElement>) {
         this.elem = elem;
+        if (imshowCanvas) {
+            this.imshowFigure = new ImshowFigure(imshowCanvas);
+            this.imshowFigure.imshow(new Matrix(4,4,[25,234,72,100,25,234,72,100,25,234,72,100,25,234,72,100], "double"));
+        }
 
         // Add built in functions to environment
         for(let functionName in MATLAB_FUNCTIONS) {
@@ -1159,10 +1167,52 @@ export class Environment {
         return this.endValueStack[this.endValueStack.length - 1];
     }
 
+    public imshow(mat: Matrix) {
+        this.imshowFigure?.imshow(mat);
+    }
+
     public addListener(listener: EnvironmentListener) {
         this.listeners.push(listener);
     }
 }
+
+export class ImshowFigure {
+
+    private elem: JQuery<HTMLCanvasElement>;
+    private context: CanvasRenderingContext2D | null;
+
+    public constructor(elem: JQuery<HTMLCanvasElement>) {
+        this.elem = elem;
+        this.context = elem[0].getContext('2d');
+    }
+
+    public imshow(mat: Matrix) {
+        if (!this.context) {
+            return;
+        }
+
+        this.elem[0].width = mat.width;
+        this.elem[0].height = mat.height;
+
+        let imgData = this.context.createImageData(mat.width, mat.height);
+
+        for(let r = 0; r < mat.rows; ++r) {
+            for(let c = 0; c < mat.cols; ++c) {
+                let i = r * mat.width + c;
+                let d = mat.at(r + 1, c + 1);
+                console.log(d);
+                console.log(i);
+                imgData.data[4*i] = d;     // r
+                imgData.data[4*i + 1] = d; // g
+                imgData.data[4*i + 2] = d; // b
+                imgData.data[4*i + 3] = 255; // a
+            }
+        }
+
+        this.context.putImageData(imgData, 0, 0);
+    }
+}
+
 
 export type ASTNode = any;
 

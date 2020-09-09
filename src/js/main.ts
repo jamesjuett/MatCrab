@@ -10,7 +10,8 @@ import { CodeConstruct, Environment, MatlabError } from "./matlab";
 
 $(document).ready(function(){
 
-    let globalWorkspace = new Environment($("#vars"));
+    let globalWorkspace = new Environment($("#vars"), $("canvas"));
+    
     
     var queryString = getQueryString();
 
