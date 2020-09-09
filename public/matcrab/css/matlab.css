@@ -12,12 +12,11 @@
     table-layout: fixed;
 }
 
-.matlab-table td,
-.matlab-index td,
-.matlab-range td {
+.matlab-matrix-cell {
     border: 1px solid #555;
     padding: 3px;
     text-align: center;
+    vertical-align: top;
 }
 
 .matlab-range {
@@ -59,13 +58,33 @@
     font-size: 0.8em;
 }
 
-.matlab-index td.selected {
+.matlab-index .matlab-matrix-cell.selected {
     color: inherit;
     /*background-color : red;*/
 }
 
-.matlab-index td.selected > .highlight {
+.matlab-index .matlab-matrix-cell.selected > .highlight {
     background: none;
+}
+
+.matlab-column-index {
+    text-align-last: center;
+    font-size: 0.8em;
+}
+
+.matlab-column-index.selected {
+    font-size: 1em;
+    font-weight: bold;
+}
+
+.matlab-row-index {
+    font-size: 0.8em;
+    padding-right: 0.3em;
+}
+
+.matlab-row-index.selected {
+    font-size: 1em;
+    font-weight: bold;
 }
 
 .matlab-range {
@@ -221,9 +240,9 @@ svg.matlab-range-svg {
 
 .matlab-identifier-name {
     text-align: center;
-    position: absolute;
     left: 0;
     right: 0;
+    font-family: monospace;
 }
 
 #visualization {
@@ -246,4 +265,35 @@ svg.matlab-range-svg {
 
 .matcrab-visualization {
     font-family: monospace;
+}
+
+.matcrab-variable-exercise-group > table {
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.matcrab-variable-exercise-group .matlab-table {
+    margin: 0.5em;
+}
+
+.matcrab-variable-exercise-status {
+    text-align: center;
+}
+
+.matcrab-complete-glyphicon {
+    color: #1acf1a;
+    font-size: large;
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+.matcrab-incomplete-glyphicon {
+    color: #c75f5f;
+    font-size: large;
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+.matcrab-setup,
+.matcrab-variable-target,
+.matcrab-exercise-complete {
+    display: none;
 }
