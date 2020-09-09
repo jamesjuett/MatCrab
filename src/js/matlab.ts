@@ -1,5 +1,5 @@
 import { Mutable, Color, assert, cloneArray, MatlabMath, asMutable } from "./util/util";
-import { range } from "lodash";
+import { range, zip, zipWith } from "lodash";
 
 
 
@@ -25,46 +25,52 @@ export class MatlabError {
     }
 }
 
-export class Matrix implements Visualizable {
 
-    //Static functions
-    // TODO: Should this really be a static function of matrix?
-    public static formatNumber(num: number) {
-        if (Math.trunc(num) == num){
-            return num.toString();
-        }
-        else{
-            return num.toPrecision(2);
-        }
+function formatNumber(num: number) {
+    if (Math.trunc(num) == num){
+        return num.toString();
     }
+    else{
+        return num.toPrecision(2);
+    }
+}
+
+export class Matrix implements Visualizable {
 
     public static scalar(value: number, dataType: DataType) {
         return new Matrix(1, 1, [value], dataType);
     }
 
-    public static createSized(rows: number, cols: number, dataType: DataType) {
-        return new Matrix(rows, cols, new Array(rows * cols), dataType);
+    public static createSized(rows: number, cols: number, layers: number, dataType: DataType) {
+        return new Matrix(rows, cols, layers, new Array(rows * cols * layers), dataType);
     }
     
-
-    public readonly numDims = 2;
     public readonly rows: number;
     public readonly cols: number;
+    public readonly layers: number;
     public readonly height: number;
     public readonly width: number;
     public readonly numel: number;
     public readonly dataType: DataType;
 
+    private readonly layerSize: number;
+
     public readonly isScalar: boolean;
     public readonly isVector: boolean;
+    public readonly is3D: boolean; 
    
     public readonly color: string;
 
     public readonly data: readonly number[];
 
-    public constructor(rows: number, cols: number, data: readonly number[], dataType: DataType) {
+    public constructor(rows: number, cols: number, layers: number, data: readonly number[], dataType: DataType) {
+        assert(rows >= 0);
+        assert(cols >= 0);
+        assert(layers >= 0);
         this.rows = rows;
         this.cols = cols;
+        this.layers = layers;
+        this.layerSize = rows * cols;
         this.height = rows;
         this.width = cols;
         this.numel = rows * cols;
@@ -73,28 +79,35 @@ export class Matrix implements Visualizable {
 
         this.isScalar = rows === 1 && cols === 1;
         this.isVector = rows === 1 || cols === 1;
+        this.is3D = layers > 1;
 
-        this.color = Color.toColor([this.rows, this.height, this.data], Color.LIGHT_LETTERS);
+        this.color = Color.toColor([this.rows, this.height, this.layers, this.data], Color.LIGHT_LETTERS);
     }
 
     public toString() : string {
-        return "Rows: " + this.rows + " Cols: " + this.cols + "\nData: " + JSON.stringify(this.data);
+        if (!this.is3D) {
+            return "Rows: " + this.rows + " Cols: " + this.cols + "\nData: " + JSON.stringify(this.data);
+        }
+        else {
+            return "Rows: " + this.rows + " Cols: " + this.cols + " Layers: " + this.layers + "\nData: " + JSON.stringify(this.data);
+        }
     }
 
     public clone() : Matrix {
         // Note the .slice() copies the data array
-        return new Matrix(this.rows, this.cols, this.data.slice(), this.dataType);
+        return new Matrix(this.rows, this.cols, this.layers, this.data.slice(), this.dataType);
     }
 
     public equals(other: Matrix) : boolean {
-        return this.width === other.width && this.height === other.height &&
+        return this.width === other.width && this.height === other.height && this.layers === other.layers &&
                this.data.every((value, i) => value === other.data[i]);
     }
     
-    public linearIndex(row: number, col: number) {
+    public linearIndex(row: number, col: number, layer: number = 1) {
         row = row - 1;
         col = col - 1;
-        return col * this.rows + row + 1;
+        layer = layer - 1;
+        return layer * this.layerSize + col * this.rows + row + 1;
     }
 
     public atLinear(index: number) {
@@ -107,15 +120,20 @@ export class Matrix implements Visualizable {
     }
 
     public at(row: number, col: number) {
-        row = row - 1;
-        col = col - 1;
-        return this.data[col * this.rows + row]
+        return this.data[this.linearIndex(row, col) - 1];
     }
 
     public setAt(row: number, col: number, value: number) {
-        row = row - 1;
-        col = col - 1;
-        (<number[]>this.data)[col * this.rows + row] = value;
+        (<number[]>this.data)[this.linearIndex(row, col) - 1] = value;
+        return this;
+    }
+
+    public at3D(row: number, col: number, layer: number) {
+        return this.data[this.linearIndex(row, col, layer) - 1];
+    }
+
+    public setAt3D(row: number, col: number, layer: number, value: number) {
+        (<number[]>this.data)[this.linearIndex(row, col, layer) - 1] = value;
         return this;
     }
 
@@ -127,7 +145,7 @@ export class Matrix implements Visualizable {
     }
 
     // REQUIRES: data has the same number of elements as the original matrix data
-    public setAll(data: readonly number[]) {
+    public setData(data: readonly number[]) {
         assert(this.data.length === data.length, "new data must have same number of elements");
         for(let i = 0; i < this.data.length; ++i) {
             (<number[]>this.data)[i] = data[i];
@@ -136,15 +154,18 @@ export class Matrix implements Visualizable {
     }
 
     public operateAll(operate: (val: number) => number) {
-        this.setAll(this.data.map(operate));
+        this.setData(this.data.map(operate));
     }
 
-    public length(dimension: 1 | 2) {
+    public length(dimension: 1 | 2 | 3) {
         if (dimension === 1) {
             return this.rows;
         }
-        else { // if (dimension === 2) {
+        else if (dimension === 2) {
             return this.cols;
+        }
+        else {
+            return this.layers;
         }
     }
 
@@ -152,44 +173,51 @@ export class Matrix implements Visualizable {
         return this.data[0];
     }
 
-    // matrixValue : function() {
-    //     return this;
-    // },
-
     public contains(value: number) : boolean {
         return this.data.indexOf(value) !== -1;
     }
 
-    public colData(col: number) : number[] {
+    private colData(col: number) : number[] {
         return this.data.slice((col-1) * this.rows, col * this.rows);
     }
 
-    public setColData(col: number, newData: readonly number[]) {
-        for(let r = 1, i = 0; r <= this.rows; ++r) {
-            this.setAt(r, col, newData[i++]);
-        }
-    }
+    // private setColData(col: number, newData: readonly number[]) {
+    //     for(let r = 1, i = 0; r <= this.rows; ++r) {
+    //         this.setAt(r, col, newData[i++]);
+    //     }
+    // }
 
-    public rowData(row: number) : number[] {
+    private rowData(row: number) : number[] {
         return range(1, this.cols + 1).map((c) => this.at(row, c));
     }
 
-    public setRowData(row: number, newData: readonly number[]) {
-        for(let c = 1, i = 0; c <= this.cols; ++c) {
-            this.setAt(row, c, newData[i++]);
-        }
+    // private setRowData(row: number, newData: readonly number[]) {
+    //     for(let c = 1, i = 0; c <= this.cols; ++c) {
+    //         this.setAt(row, c, newData[i++]);
+    //     }
+    // }
+
+    private layerData(layer: number) : number[] {
+        return this.data.slice(this.layerSize * (layer-1), this.layerSize * layer);
     }
 
     public accumulateCols(operate: (a:number, b:number) => number) {
-        return new Matrix(1, this.cols,
-            range(1, this.cols+1).map((c) => this.colData(c).reduce(operate)),
+        return new Matrix(1, this.cols, this.layers,
+            range(1, this.layers * this.cols + 1).map((c) => this.colData(c).reduce(operate)),
             "double");
     }
     
     public accumulateRows(operate: (a:number, b:number) => number) {
-        return new Matrix(this.rows, 1,
-            range(1, this.rows+1).map((c) => this.rowData(c).reduce(operate)),
+        return new Matrix(this.rows, 1, this.layers,
+            range(1, this.layers * this.rows + 1).map((c) => this.rowData(c).reduce(operate)),
             "double");
+    }
+    
+    public accumulateLayers(operate: (a:number, b:number) => number) {
+        return new Matrix(this.rows, this.cols, 1,
+            range(1, this.layers + 1).map(layer => this.layerData(layer)).reduce(
+                (prev, currentLayer) => zipWith(prev, currentLayer, operate)
+            ), "double");
     }
 
     public visualize_html(options?: VisualizationOptions) : string {
@@ -212,7 +240,7 @@ export class Matrix implements Visualizable {
                     td.addClass(this.at(r,c) ? "logical-1" : "logical-0");
                 }
                 let tempSpan = $("<span></span>");
-                tempSpan.html(Matrix.formatNumber(this.at(r,c)));
+                tempSpan.html(formatNumber(this.at(r,c)));
                 temp.append(tempSpan);
                 td.append(temp);
                 tr.append(td);
@@ -223,6 +251,9 @@ export class Matrix implements Visualizable {
     }
 
 }
+
+
+
 
 abstract class Subarray {
 
@@ -620,7 +651,7 @@ class AllLinearSubarray extends LinearSubarray {
             target.fill(value.scalarValue());
         }
         else if (target.numel == value.numel) {
-            target.setAll(value.data);
+            target.setData(value.data);
         }
         else{
             throw "The length of the RHS matrix (" + value.numel + ") does not match the" +
@@ -1018,19 +1049,19 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
         }
         // The magic algorithm for even cases is more complicated, so let's just hardcode some for now.
         else if (n === 2) {
-            mat.setAll([1,4,3,2]);
+            mat.setData([1,4,3,2]);
         }
         else if (n === 4) {
-            mat.setAll([16,5,9,4,2,11,7,14,3,10,6,15,13,8,12,1]);
+            mat.setData([16,5,9,4,2,11,7,14,3,10,6,15,13,8,12,1]);
         }
         else if (n === 6) {
-            mat.setAll([35,3,31,8,30,4,1,32,9,28,5,36,6,7,2,33,34,29,26,21,22,17,12,13,19,23,27,10,14,18,24,25,20,15,16,11]);
+            mat.setData([35,3,31,8,30,4,1,32,9,28,5,36,6,7,2,33,34,29,26,21,22,17,12,13,19,23,27,10,14,18,24,25,20,15,16,11]);
         }
         else if (n === 8) {
-            mat.setAll([64,9,17,40,32,41,49,8,2,55,47,26,34,23,15,58,3,54,46,27,35,22,14,59,61,12,20,37,29,44,52,5,60,13,21,36,28,45,53,4,6,51,43,30,38,19,11,62,7,50,42,31,39,18,10,63,57,16,24,33,25,48,56,1]);
+            mat.setData([64,9,17,40,32,41,49,8,2,55,47,26,34,23,15,58,3,54,46,27,35,22,14,59,61,12,20,37,29,44,52,5,60,13,21,36,28,45,53,4,6,51,43,30,38,19,11,62,7,50,42,31,39,18,10,63,57,16,24,33,25,48,56,1]);
         }
         else if (n === 10) {
-            mat.setAll([92,98,4,85,86,17,23,79,10,11,99,80,81,87,93,24,5,6,12,18,1,7,88,19,25,76,82,13,94,100,8,14,20,21,2,83,89,95,96,77,15,16,22,3,9,90,91,97,78,84,67,73,54,60,61,42,48,29,35,36,74,55,56,62,68,49,30,31,37,43,51,57,63,69,75,26,32,38,44,50,58,64,70,71,52,33,39,45,46,27,40,41,47,28,34,65,66,72,53,59]);
+            mat.setData([92,98,4,85,86,17,23,79,10,11,99,80,81,87,93,24,5,6,12,18,1,7,88,19,25,76,82,13,94,100,8,14,20,21,2,83,89,95,96,77,15,16,22,3,9,90,91,97,78,84,67,73,54,60,61,42,48,29,35,36,74,55,56,62,68,49,30,31,37,43,51,57,63,69,75,26,32,38,44,50,58,64,70,71,52,33,39,45,46,27,40,41,47,28,34,65,66,72,53,59]);
         }
         else {
             throw "Sorry, MatCrab does not support magic matrices of even size greater than size 10."
@@ -2295,7 +2326,7 @@ class ColonExpression extends Expression {
 }
 
 function scalarHtml(value: number) {
-    var numStr = Matrix.formatNumber(value);
+    var numStr = formatNumber(value);
     return `<div class="matlab-scalar${numStr.length > 3 ? " double" : ""}">
         <span>${numStr}</span>
     </div>`;
