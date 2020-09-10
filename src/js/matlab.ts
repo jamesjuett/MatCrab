@@ -1200,8 +1200,8 @@ export class ImshowFigure {
             for(let c = 0; c < mat.cols; ++c) {
                 let i = r * mat.width + c;
                 let d = mat.at(r + 1, c + 1);
-                console.log(d);
-                console.log(i);
+                // console.log(d);
+                // console.log(i);
                 imgData.data[4*i] = d;     // r
                 imgData.data[4*i + 1] = d; // g
                 imgData.data[4*i + 2] = d; // b

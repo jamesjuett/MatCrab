@@ -1,6 +1,6 @@
 import {getQueryString} from "./util/util";
 import {SyntaxError, parse as matlab_parse} from "./matlab_parser"
-import { CodeConstruct, Environment, MatlabError } from "./matlab";
+import { CodeConstruct, Environment, MatlabError, Matrix } from "./matlab";
 
 
 // import {gapi} from "https://apis.google.com/js/platform.js";
@@ -95,4 +95,48 @@ $(document).ready(function(){
         }, delay);
         return false;
     });
+
 });
+
+    
+let choices = [
+    {name: "A", code: matlab_parse("value2 = temp_value;")},
+    // {name: "B", code: matlab_parse("value1 = 5;")},
+    {name: "C", code: matlab_parse("value1 = value2;")},
+    {name: "D", code: matlab_parse("temp = value2;")},
+    // {name: "E", code: matlab_parse("value2 = 500;")},
+    {name: "F", code: matlab_parse("temp_value = value1;")},
+];
+
+function check(selection: number[]) {
+    let env = new Environment();
+    env.setVar("value1", Matrix.scalar(1, "double"));
+    env.setVar("value2", Matrix.scalar(2, "double"));
+    // var src = matlab_parse(selection.map(n => choices[n].code).join(""));
+    var cc = CodeConstruct.create(
+        {
+            what: "statement_group",
+            statements: selection.map(n => choices[n].code)
+        },
+        env);
+    cc.execute();
+
+    if (env.varLookup("value1")?.value.scalarValue() === 2 &&
+        env.varLookup("value2")?.value.scalarValue() === 1 ) {
+        
+        console.log(selection.map(n => choices[n].name).join(""));
+    }
+
+}
+
+export function attempt(sequence: number[], maxDepth: number) {
+    if (sequence.length > maxDepth) { return; }
+
+    sequence.length > 0 && check(sequence);
+
+    for(let i = 0; i < choices.length; ++i) {
+        sequence.push(i);
+        attempt(sequence, maxDepth);
+        sequence.pop();
+    }
+}
