@@ -38,7 +38,7 @@ function formatNumber(num: number) {
 export class Matrix implements Visualizable {
 
     public static scalar(value: number, dataType: DataType) {
-        return new Matrix(1, 1, [value], dataType);
+        return new Matrix(1, 1, 1, [value], dataType);
     }
 
     public static createSized(rows: number, cols: number, layers: number, dataType: DataType) {
@@ -57,6 +57,8 @@ export class Matrix implements Visualizable {
 
     public readonly isScalar: boolean;
     public readonly isVector: boolean;
+    public readonly isColumnVector: boolean;
+    public readonly isRowVector: boolean;
     public readonly is3D: boolean; 
    
     public readonly color: string;
@@ -77,8 +79,10 @@ export class Matrix implements Visualizable {
         this.data = cloneArray(data) // copy is important, since otherwise internal casting away of readonly on data could cause issues
         this.dataType = dataType;
 
-        this.isScalar = rows === 1 && cols === 1;
-        this.isVector = rows === 1 || cols === 1;
+        this.isScalar = rows === 1 && cols === 1 && layers === 1;
+        this.isVector = (rows === 1 || cols === 1) && layers === 1;
+        this.isRowVector = rows === 1 && layers === 1;
+        this.isColumnVector = cols === 1 && layers === 1;
         this.is3D = layers > 1;
 
         this.color = Color.toColor([this.rows, this.height, this.layers, this.data], Color.LIGHT_LETTERS);
@@ -177,39 +181,45 @@ export class Matrix implements Visualizable {
         return this.data.indexOf(value) !== -1;
     }
 
-    private colData(col: number) : number[] {
-        return this.data.slice((col-1) * this.rows, col * this.rows);
+    public colData(col: number, layer: number) : number[] {
+        return this.data.slice(
+            this.linearIndex(1, col, layer) - 1,
+            this.linearIndex(this.rows, col, layer));
     }
 
-    // private setColData(col: number, newData: readonly number[]) {
-    //     for(let r = 1, i = 0; r <= this.rows; ++r) {
-    //         this.setAt(r, col, newData[i++]);
-    //     }
-    // }
-
-    private rowData(row: number) : number[] {
-        return range(1, this.cols + 1).map((c) => this.at(row, c));
+    public setColData(col: number, layer: number, newData: readonly number[]) {
+        assert(this.height === newData.length);
+        asMutable(this.data).splice(
+            this.linearIndex(1, col, layer) - 1,
+            this.height,
+            ...newData);
     }
 
-    // private setRowData(row: number, newData: readonly number[]) {
-    //     for(let c = 1, i = 0; c <= this.cols; ++c) {
-    //         this.setAt(row, c, newData[i++]);
-    //     }
-    // }
+    public rowData(row: number, layer: number) : number[] {
+        return range(1, this.cols + 1).map((c) => this.at3D(row, c, layer));
+    }
 
-    private layerData(layer: number) : number[] {
+    public setRowData(row: number, layer: number, newData: readonly number[]) {
+        newData.forEach((d, c) => this.setAt3D(row, c, layer, d));
+    }
+
+    public layerData(layer: number) : number[] {
         return this.data.slice(this.layerSize * (layer-1), this.layerSize * layer);
     }
 
     public accumulateCols(operate: (a:number, b:number) => number) {
         return new Matrix(1, this.cols, this.layers,
-            range(1, this.layers * this.cols + 1).map((c) => this.colData(c).reduce(operate)),
+            range(1, this.layers + 1).map(layer =>
+                range(1, this.cols + 1).map((c) => this.colData(c, layer).reduce(operate))
+            ).flat(),
             "double");
     }
     
     public accumulateRows(operate: (a:number, b:number) => number) {
         return new Matrix(this.rows, 1, this.layers,
-            range(1, this.layers * this.rows + 1).map((c) => this.rowData(c).reduce(operate)),
+            range(1, this.layers + 1).map(layer =>
+                range(1, this.rows + 1).map((r) => this.rowData(r, layer).reduce(operate))
+            ).flat(),
             "double");
     }
     
@@ -380,8 +390,7 @@ class CoordinateSubarray extends Subarray {
             })
         });
 
-        return new Matrix(rowIndices.length,
-            colIndices.length, data, source.dataType);
+        return new Matrix(rowIndices.length, colIndices.length, 1, data, source.dataType);
     }
 
     public assign(target: Matrix, value: Matrix) {
@@ -574,7 +583,7 @@ class RegularLinearSubarray extends LinearSubarray {
 
     public readValue(source: Matrix) : Matrix {
         return new Matrix(
-            this.selectedIndices.rows, this.selectedIndices.cols,
+            this.selectedIndices.rows, this.selectedIndices.cols, this.selectedIndices.layers,
             this.selectedIndices.data.map(index => source.atLinear(index)),
             source.dataType
         );
@@ -643,7 +652,7 @@ class AllLinearSubarray extends LinearSubarray {
     }
 
     public readValue(source: Matrix) : Matrix {
-        return new Matrix(source.numel, 1, source.data, source.dataType);
+        return new Matrix(source.numel, 1, 1, source.data, source.dataType);
     }
     
     public assign(target: Matrix, value: Matrix) {
@@ -721,13 +730,13 @@ class LogicalLinearSubarray extends LinearSubarray {
     public readValue(source: Matrix) : Matrix {
         let selectedData = this.selectedIndices.map(i => source.atLinear(i));
 
-        if (this.logicalSelection.rows === 1) {
+        if (this.logicalSelection.isRowVector) {
             // special case - if the logical index matrix is a row vector, result is shaped as a row vector
-            return new Matrix(1, selectedData.length, selectedData, source.dataType);
+            return new Matrix(1, selectedData.length, 1, selectedData, source.dataType);
         }
         else {
             // general case - shaped as a column vector
-            return new Matrix(selectedData.length, 1, selectedData, source.dataType);
+            return new Matrix(selectedData.length, 1, 1, selectedData, source.dataType);
         }
     }
     
@@ -864,33 +873,45 @@ export class MatlabFunction {
 
 function createSizedMatrix(args: Matrix[]) {
     if (args.length === 0) {
-        return new Matrix(1,1,[0],"double");
+        return new Matrix(1,1,1,[0],"double");
     }
     else if (args.length === 1) {
         let arg = args[0];
         if (arg.isScalar) {
             // A scalar is acceptable and produces a square matrix
             let size = arg.scalarValue();
-            return new Matrix(size, size, new Array(size*size), "double");
+            return new Matrix(size, size, 1, new Array(size*size), "double");
         }
         else {
             // Otherwise, must be a row vector with real values
-            if (arg.rows !== 1) {
+            if (!arg.isRowVector) {
                 throw "The one-argument version of this function requires a numeric row vector as an input."
             }
-            return new Matrix(arg.atLinear(1), arg.atLinear(2), new Array(arg.atLinear(1) * arg.atLinear(2)), "double");
+            if (arg.numel === 2) {
+                return new Matrix(arg.atLinear(1), arg.atLinear(2), 1, new Array(arg.atLinear(1) * arg.atLinear(2)), "double");
+            }
+            else if (arg.numel === 3) {
+                return new Matrix(arg.atLinear(1), arg.atLinear(2), arg.atLinear(3), new Array(arg.atLinear(1) * arg.atLinear(2)), "double");
+            }
+            else {
+                throw "Sorry, MatCrab does not support matrices with more than 3 dimensions.";
+            }
         }
     }
-    else if ( args.length === 2) {
+    else if (args.length === 2 || args.length === 3) {
         let numRows = args[0];
         let numCols = args[1];
+        let numLayers = args[2] ?? Matrix.scalar(1, "double");
         if (!numRows.isScalar) {
             throw "The argument for the number of rows must be a scalar.";
         }
         if (!numCols.isScalar) {
             throw "The argument for the number of columns must be a scalar.";
         }
-        return new Matrix(numRows.scalarValue(), numCols.scalarValue(), new Array(numRows.scalarValue() * numCols.scalarValue()), "double");
+        if (!numLayers.isScalar) {
+            throw "The argument for the number of layers must be a scalar.";
+        }
+        return new Matrix(numRows.scalarValue(), numCols.scalarValue(), numLayers.scalarValue(), new Array(numRows.scalarValue() * numCols.scalarValue()), "double");
     }
     else {
         throw "Sorry, MatCrab does not support matrices with more than two dimensions.";
@@ -908,9 +929,11 @@ function matrixAccumulation(mat: Matrix, dimension: Matrix | undefined, operate:
     } 
 
     
-    // Special case: if a row/col vector, sum whole thing
-    if (mat.isVector) {
-        return new Matrix(1,1,[mat.data.reduce(operate)], "double"); // will coerce other numeric datatypes to double
+    // Special case: if it only has length in one dimension, accumulate the whole thing
+    // Note that this is different from checking whether it's a vector, since a 1x1x3 is
+    // not considered a vector but does fit with this special case
+    if (mat.isVector || (mat.rows === 1 && mat.cols === 1)) {
+        return new Matrix(1,1,1,[mat.data.reduce(operate)], "double"); // will coerce other numeric datatypes to double
     }
 
     if (dim === 1) {
@@ -919,9 +942,12 @@ function matrixAccumulation(mat: Matrix, dimension: Matrix | undefined, operate:
     else if (dim === 2) {
         return mat.accumulateRows(operate);
     }
+    else if (dim === 3) {
+        return mat.accumulateLayers(operate);
+    }
     else {
-        // Because MatCrab does not support more than two dimensional matrices,
-        // sum with a dimension higher than 2 will always just return the original matrix
+        // Because MatCrab does not support more than 3 dimensional matrices,
+        // sum with a dimension higher than 3 will always just return the original matrix
         return mat.clone();
     }
 }
@@ -941,25 +967,35 @@ function matrixUnaryFunction(mat: Matrix, operate: (val:number) => number) {
 function matrixFlipud(args: Matrix[]) {
     let orig = args[0];
     let newMat = orig.clone();
-    for(let c = 1; c <= orig.cols; ++c) {
-        // Iterate through original and fill new in backward fashion for each column
-        for (let r_orig = 1, r_new = newMat.rows; r_orig <= orig.rows; ++r_orig, --r_new) {
-            newMat.setAt(r_new, c, orig.at(r_orig, c));
+    
+    for(let layer = 1; layer <= newMat.layers; ++layer) {
+        for(let c = 1; c < newMat.cols; ++c) {
+            newMat.setColData(c, layer, newMat.colData(c, layer).reverse())
         }
-    }
+    );
+
     return newMat;
 }
 
 function matrixFliplr(args: Matrix[]) {
     let orig = args[0];
     let newMat = orig.clone();
-    for(let r = 1; r <= orig.rows; ++r) {
-        // Iterate through original and fill new in backward fashion for each row
-        for (let c_orig = 1, c_new = newMat.cols; c_orig <= orig.cols; ++c_orig, --c_new) {
-            newMat.setAt(r, c_new, orig.at(r, c_orig));
-        }
-    }
+
+    for(let layer = 1; layer <= newMat.layers; ++layer) {
+        for(let r = 1; r < newMat.rows; ++r) {
+            newMat.setRowData(r, layer, newMat.rowData(r, layer).reverse())
+        )
+    );
+
     return newMat;
+}
+
+function matrixFlipLayers(args: Matrix[]) {
+    let orig = args[0];
+
+    return new Matrix(orig.rows, orig.cols, orig.layers,
+        range(1, orig.layers + 1).reverse().map(layer => orig.layerData(layer)).flat(),
+        "double");
 }
 
 function unsupportedMatlabFunction(name: string) {
@@ -986,6 +1022,9 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
             else if (dim === 2) {
                 return matrixFliplr(args);
             }
+            else if (dim === 3) {
+                return matrixFlipLayers(args);
+            }
             else {
                 // flipping along a higher dimension does nothing, since MatCrab only supports 2D matrices
                 return args[0].clone();
@@ -994,7 +1033,7 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
     }),
     "rot90" : new MatlabFunction(1, (args: Matrix[]) => {
         let orig = args[0];
-        let newMat = Matrix.createSized(orig.cols, orig.rows, "double");
+        let newMat = Matrix.createSized(orig.cols, orig.rows, orig.layers, "double");
         
         // last column becomes first row, 2nd to last column becomes 2nd row, etc.
         for(let c = orig.cols, r = 1; c >= 1; --c, ++r) {
