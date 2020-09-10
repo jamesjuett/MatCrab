@@ -29,10 +29,17 @@ export class MatlabError {
 function formatNumber(num: number) {
     if (Math.trunc(num) == num){
         return num.toString();
+<<<<<<< HEAD
     }
     else{
         return num.toPrecision(2);
     }
+=======
+    }
+    else{
+        return num.toPrecision(2);
+    }
+>>>>>>> 3baea9e66aba9e927f4bf9c4791986ed9d466225
 }
 
 export class Matrix implements Visualizable {
@@ -57,8 +64,11 @@ export class Matrix implements Visualizable {
 
     public readonly isScalar: boolean;
     public readonly isVector: boolean;
+<<<<<<< HEAD
     public readonly isColumnVector: boolean;
     public readonly isRowVector: boolean;
+=======
+>>>>>>> 3baea9e66aba9e927f4bf9c4791986ed9d466225
     public readonly is3D: boolean; 
    
     public readonly color: string;
@@ -79,10 +89,15 @@ export class Matrix implements Visualizable {
         this.data = cloneArray(data) // copy is important, since otherwise internal casting away of readonly on data could cause issues
         this.dataType = dataType;
 
+<<<<<<< HEAD
         this.isScalar = rows === 1 && cols === 1 && layers === 1;
         this.isVector = (rows === 1 || cols === 1) && layers === 1;
         this.isRowVector = rows === 1 && layers === 1;
         this.isColumnVector = cols === 1 && layers === 1;
+=======
+        this.isScalar = rows === 1 && cols === 1;
+        this.isVector = rows === 1 || cols === 1;
+>>>>>>> 3baea9e66aba9e927f4bf9c4791986ed9d466225
         this.is3D = layers > 1;
 
         this.color = Color.toColor([this.rows, this.height, this.layers, this.data], Color.LIGHT_LETTERS);
@@ -181,6 +196,7 @@ export class Matrix implements Visualizable {
         return this.data.indexOf(value) !== -1;
     }
 
+<<<<<<< HEAD
     public colData(col: number, layer: number) : number[] {
         return this.data.slice(
             this.linearIndex(1, col, layer) - 1,
@@ -204,22 +220,53 @@ export class Matrix implements Visualizable {
     }
 
     public layerData(layer: number) : number[] {
+=======
+    private colData(col: number) : number[] {
+        return this.data.slice((col-1) * this.rows, col * this.rows);
+    }
+
+    // private setColData(col: number, newData: readonly number[]) {
+    //     for(let r = 1, i = 0; r <= this.rows; ++r) {
+    //         this.setAt(r, col, newData[i++]);
+    //     }
+    // }
+
+    private rowData(row: number) : number[] {
+        return range(1, this.cols + 1).map((c) => this.at(row, c));
+    }
+
+    // private setRowData(row: number, newData: readonly number[]) {
+    //     for(let c = 1, i = 0; c <= this.cols; ++c) {
+    //         this.setAt(row, c, newData[i++]);
+    //     }
+    // }
+
+    private layerData(layer: number) : number[] {
+>>>>>>> 3baea9e66aba9e927f4bf9c4791986ed9d466225
         return this.data.slice(this.layerSize * (layer-1), this.layerSize * layer);
     }
 
     public accumulateCols(operate: (a:number, b:number) => number) {
         return new Matrix(1, this.cols, this.layers,
+<<<<<<< HEAD
             range(1, this.layers + 1).map(layer =>
                 range(1, this.cols + 1).map((c) => this.colData(c, layer).reduce(operate))
             ).flat(),
+=======
+            range(1, this.layers * this.cols + 1).map((c) => this.colData(c).reduce(operate)),
+>>>>>>> 3baea9e66aba9e927f4bf9c4791986ed9d466225
             "double");
     }
     
     public accumulateRows(operate: (a:number, b:number) => number) {
         return new Matrix(this.rows, 1, this.layers,
+<<<<<<< HEAD
             range(1, this.layers + 1).map(layer =>
                 range(1, this.rows + 1).map((r) => this.rowData(r, layer).reduce(operate))
             ).flat(),
+=======
+            range(1, this.layers * this.rows + 1).map((c) => this.rowData(c).reduce(operate)),
+>>>>>>> 3baea9e66aba9e927f4bf9c4791986ed9d466225
             "double");
     }
     
