@@ -972,7 +972,7 @@ function matrixFlipud(args: Matrix[]) {
         for(let c = 1; c < newMat.cols; ++c) {
             newMat.setColData(c, layer, newMat.colData(c, layer).reverse())
         }
-    );
+    }
 
     return newMat;
 }
@@ -983,9 +983,9 @@ function matrixFliplr(args: Matrix[]) {
 
     for(let layer = 1; layer <= newMat.layers; ++layer) {
         for(let r = 1; r < newMat.rows; ++r) {
-            newMat.setRowData(r, layer, newMat.rowData(r, layer).reverse())
-        )
-    );
+            newMat.setRowData(r, layer, newMat.rowData(r, layer).reverse());
+        }
+    }
 
     return newMat;
 }
@@ -1035,9 +1035,11 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
         let orig = args[0];
         let newMat = Matrix.createSized(orig.cols, orig.rows, orig.layers, "double");
         
-        // last column becomes first row, 2nd to last column becomes 2nd row, etc.
-        for(let c = orig.cols, r = 1; c >= 1; --c, ++r) {
-            newMat.setRowData(r, orig.colData(c));
+        for(let layer = 1; layer <= newMat.layers; ++layer) {
+            // last column becomes first row, 2nd to last column becomes 2nd row, etc.
+            for(let c = orig.cols, r = 1; c >= 1; --c, ++r) {
+                newMat.setRowData(r, layer, orig.colData(c, layer));
+            }
         }
         return newMat;
     }),
@@ -1046,8 +1048,10 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
     "eye" : new MatlabFunction([0,MatlabFunction.ARGS_INF], (args: Matrix[]) => {
         let mat = createSizedMatrix(args).fill(0);
         let diag_len = Math.min(mat.rows, mat.cols);
-        for(let i = 1; i <= diag_len; ++i) {
-            mat.setAt(i, i, 1);
+        for(let layer = 1; layer <= mat.layers; ++layer) {
+            for(let i = 1; i <= diag_len; ++i) {
+                mat.setAt3D(i, i, layer, 1);
+            }
         }
         return mat;
     }),
@@ -1109,7 +1113,14 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
     }),
     "numel" : new MatlabFunction(1, (args: Matrix[]) => Matrix.scalar(args[0].numel, "double")),
     "length" : new MatlabFunction(1, (args: Matrix[]) => Matrix.scalar(Math.max(args[0].rows, args[0].cols), "double")),
-    "size" : new MatlabFunction(1, (args: Matrix[]) => new Matrix(1, 2, [args[0].rows, args[0].cols], "double")),
+    "size" : new MatlabFunction(1, (args: Matrix[]) => {
+        if (args[0].is3D) {
+            return new Matrix(1, 3, 1, [args[0].rows, args[0].cols, args[0].layers], "double")
+        }
+        else {
+            return new Matrix(1, 2, 1, [args[0].rows, args[0].cols], "double")
+        }
+    }),
 
     "sum" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a + b)),
     "prod" : new MatlabFunction([1,2], (args: Matrix[]) => matrixAccumulation(args[0], args[1], (a:number, b:number) => a * b)),
@@ -1137,7 +1148,7 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
         
         construct.env.imshow(args[0]);
 
-        return new Matrix(1, 1, [1], "double");
+        return new Matrix(1, 1, 1, [1], "double");
     })
 }
 
