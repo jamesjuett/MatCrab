@@ -97,6 +97,10 @@ export class Matrix implements Visualizable {
         }
     }
 
+    public sizeString() : string {
+        return this.layers > 1 ? `${this.rows}x${this.cols}x${this.layers}` : `${this.rows}x${this.cols}`;
+    }
+
     public clone() : Matrix {
         // Note the .slice() copies the data array
         return new Matrix(this.rows, this.cols, this.layers, this.data.slice(), this.dataType);
@@ -1179,7 +1183,7 @@ export class Environment {
         this.elem = elem;
         if (imshowCanvas) {
             this.imshowFigure = new ImshowFigure(imshowCanvas);
-            this.imshowFigure.imshow(new Matrix(4,4,[25,234,72,100,25,234,72,100,25,234,72,100,25,234,72,100], "double"));
+            this.imshowFigure.imshow(new Matrix(4,4,1,[25,234,72,100,25,234,72,100,25,234,72,100,25,234,72,100], "double"));
         }
 
         // Add built in functions to environment
@@ -1773,27 +1777,37 @@ class MatrixExpression extends Expression {
     }
 
     private append_rows(mats: Matrix[]) : ExecutedExpressionResult {
-        var newCols : number[][] = [];
-        var cols = mats[0].cols;
-        var newRows = 0;
-        for(var i = 0; i < cols; ++i) {
-            newCols.push([]);
-        }
-        for(var i = 0; i < mats.length; ++i) {
-            var mat = mats[i];
+
+        const newCols = mats[0].cols;
+        const newLayers = mats[0].layers;
+        let newRows = 0;
+        for(let i = 0; i < mats.length; ++i) {
+            let mat = mats[i];
             newRows += mat.rows;
-            if (mat.cols !== cols) {
+            if (mat.cols !== newCols) {
                 return errorResult(new MatlabError(this, "Mismatched matrix number of columns."));
             }
-            for(var c = 0; c < cols; ++c) {
-                for(var r = 0; r < mat.rows; ++r) {
-                    newCols[c].push(mat.at(r+1, c+1));
+            
+            if (mat.layers !== newLayers) {
+                return errorResult(new MatlabError(this, "Mismatched matrix number of layers."));
+            }
+        }
+
+        let newMat = Matrix.createSized(newRows, newCols, newLayers,
+            mats.some(m => m.dataType === "double") ? "double" : mats[0].dataType);
+        
+        for(let layer = 1; layer <= newLayers; ++layer) {
+            let rNew = 0;
+            for(let i = 0; i < mats.length; ++i) {
+                for(let r = 1; r <= mats[i].rows; ++r, ++rNew) {
+                    for(let c = 1; c <= newCols; ++c) {
+                        newMat.setAt3D(rNew, c, layer, mats[i].at3D(r, c, layer));
+                    }
                 }
             }
         }
-        var newData = (<Array<number>>[]).concat.apply([], newCols);
-        return successResult(new Matrix(newRows, cols, newData,
-            mats.some(m => m.dataType === "double") ? "double" : mats[0].dataType));
+ 
+        return successResult(newMat);
     }
 
     public visualize_expr() {
@@ -1838,23 +1852,37 @@ class RowExpression extends Expression {
     }
 
     private append_cols(mats: Matrix[]) : ExecutedExpressionResult {
-        var rows = mats[0].rows;
 
-        if (mats.some(m => {return m.rows != rows})) {
-            return errorResult(new MatlabError(this, "Mismatched matrix number of rows."));
+        const newRows = mats[0].rows;
+        const newLayers = mats[0].layers;
+        let newCols = 0;
+        for(let i = 0; i < mats.length; ++i) {
+            let mat = mats[i];
+            newCols += mat.cols;
+            if (mat.rows !== newRows) {
+                return errorResult(new MatlabError(this, "Mismatched matrix number of rows."));
+            }
+            
+            if (mat.layers !== newLayers) {
+                return errorResult(new MatlabError(this, "Mismatched matrix number of layers."));
+            }
         }
 
-        return successResult(new Matrix(
-            mats[0].rows,
-            mats.reduce(function(prev, current){
-                return prev + current.cols;
-            },0),
-            mats.reduce(function(newData, mat){
-                newData = newData.concat(mat.data);
-                return newData;
-            }, <Array<number>>[]),
-            mats.some(m => m.dataType === "double") ? "double" : mats[0].dataType
-        ));
+        let newMat = Matrix.createSized(newRows, newCols, newLayers,
+            mats.some(m => m.dataType === "double") ? "double" : mats[0].dataType);
+        
+        for(let layer = 1; layer <= newLayers; ++layer) {
+            let cNew = 0;
+            for(let i = 0; i < mats.length; ++i) {
+                for(let c = 1; c <= newCols; ++c, ++cNew) {
+                    for(let r = 1; r <= mats[i].rows; ++r) {
+                        newMat.setAt3D(r, cNew, layer, mats[i].at3D(r, c, layer));
+                    }
+                }
+            }
+        }
+ 
+        return successResult(newMat);
     }
 
     public visualize_expr() {
@@ -1941,7 +1969,7 @@ class RangeExpression extends Expression {
         }
 
         // TODO: check on type of ranges in MATLAB
-        return successResult(new Matrix(1, range.length, range, "double"));
+        return successResult(new Matrix(1, range.length, 1, range, "double"));
     }
 
     public visualize_expr() {
@@ -2047,13 +2075,15 @@ abstract class BinaryOperatorExpression extends Expression {
         let newData = [];
         let numRows;
         let numCols;
-        if (leftMat.rows === rightMat.rows && leftMat.cols === rightMat.cols) {
+        let numLayers;
+        if (leftMat.rows === rightMat.rows && leftMat.cols === rightMat.cols && leftMat.layers === rightMat.layers) {
             // Same dimensions (also covers both scalars)
             for (let i = 1; i <= leftMat.numel; ++i) {
                 newData.push(operate(leftMat.atLinear(i), rightMat.atLinear(i)));
             }
             numRows = leftMat.rows;
             numCols = leftMat.cols;
+            numLayers = leftMat.layers;
         }
         else if (leftMat.isScalar) {
             let leftScalar = leftMat.scalarValue();
@@ -2062,6 +2092,7 @@ abstract class BinaryOperatorExpression extends Expression {
             }
             numRows = rightMat.rows;
             numCols = rightMat.cols;
+            numLayers = rightMat.layers;
         }
         else if (rightMat.isScalar) {
             let rightScalar = rightMat.scalarValue();
@@ -2070,13 +2101,14 @@ abstract class BinaryOperatorExpression extends Expression {
             }
             numRows = leftMat.rows;
             numCols = leftMat.cols;
+            numLayers = leftMat.layers;
         }
         else{
             return errorResult(new MatlabError(this, "Mismatched dimensions for operator " + op + ". LHS is a " +
-            leftMat.rows + "x" + leftMat.cols + " and RHS is a " +
-            rightMat.rows + "x" + rightMat.cols + "."));
+            leftMat.sizeString() + " and RHS is a " +
+            rightMat.sizeString() + "."));
         }
-        return successResult(new Matrix(numRows, numCols, newData, dataType));
+        return successResult(new Matrix(numRows, numCols, numLayers, newData, dataType));
     }
 
 
@@ -2202,7 +2234,7 @@ export class UnaryOperatorExpression extends Expression {
     }
 
     private unaryOp(mat: Matrix, operate : (n:number) => number, dataType:DataType) {
-        return successResult(new Matrix(mat.rows, mat.cols, mat.data.map(operate), dataType));
+        return successResult(new Matrix(mat.rows, mat.cols, mat.layers, mat.data.map(operate), dataType));
     }
 
     public visualize_expr() {
@@ -2231,6 +2263,12 @@ export class TransposeExpression extends Expression {
         if (operandResult.kind !== "success") {
             return operandResult;
         }
+
+        // Transpose is not defined for matrices of more than 2 dimensions
+        if (operandResult.value.layers > 1) {
+            return errorResult(new MatlabError(this, "The transpose operation is not defined for 3D matrices."));
+        }
+
         // [1,2,3;4,5,6;7,8,9]     1 4 7 2 6 8 3 6 9
         // Perform transpose by doing a row-major traversal and recording as new column-major data
         let oldMat = operandResult.value;
@@ -2242,7 +2280,7 @@ export class TransposeExpression extends Expression {
         }
 
         // Result matrix has number of cols/rows switched and new data from above
-        return successResult(new Matrix(oldMat.cols, oldMat.rows, newData, oldMat.dataType));
+        return successResult(new Matrix(oldMat.cols, oldMat.rows, oldMat.layers, newData, oldMat.dataType));
     }
 
     public visualize_expr() {
@@ -2284,9 +2322,9 @@ class IndexOrCallExpression extends Expression {
             let target = vari.value;
             (<Mutable<this>>this).originalMatrix = target.clone();
 
-            if (this.indiciesOrArgs.length > 2) {
+            if (this.indiciesOrArgs.length > 3) {
                 // TODO: add an error message that suggests students might have shadowed a function, if that is the case. maybe add it here?
-                return errorResult(new MatlabError(this, "Sorry, indexing in more that two dimensions is not currently supported."));
+                return errorResult(new MatlabError(this, "Sorry, indexing in more that three dimensions is not currently supported."));
             }
 
             let indicesResults = this.indiciesOrArgs.map((index, i) => {
@@ -2295,8 +2333,8 @@ class IndexOrCallExpression extends Expression {
                     this.env.pushEndValue(target.numel);
                 }
                 else {
-                    // For row/column indexing, end keyword evaluates to length along index dimension
-                    this.env.pushEndValue(target.length(<1|2>(i+1))); // 1 or 2 guaranteed from above error check for too many indices
+                    // For row/column/layer indexing, end keyword evaluates to length along index dimension
+                    this.env.pushEndValue(target.length(<1|2|3>(i+1))); // 1, 2, or 3 guaranteed from above error check for too many indices
                 }
                 let res = index.execute();
                 this.env.popEndValue();
@@ -2312,10 +2350,13 @@ class IndexOrCallExpression extends Expression {
                 (<Mutable<this>>this).subarrayResult = LinearSubarray.create(
                     this.indiciesOrArgs[0] instanceof ColonExpression ? ":" : indicesResults[0].value);
             }
-            else {
+            else if (indicesResults.length === 2) {
                 (<Mutable<this>>this).subarrayResult = CoordinateSubarray.create(
                     this.indiciesOrArgs[0] instanceof ColonExpression ? ":" : indicesResults[0].value,
                     this.indiciesOrArgs[1] instanceof ColonExpression ? ":" : indicesResults[1].value);
+            }
+            else {
+                return errorResult(new MatlabError(this, "TODO: Still need to implement row/column/layer indexing"));
             }
 
             try {
@@ -2380,7 +2421,7 @@ class IndexOrCallExpression extends Expression {
 class ColonExpression extends Expression {
 
     public evaluate() {
-        return successResult(new Matrix(1,1,[1],"double")); // dummy value
+        return successResult(new Matrix(1,1,1,[1],"double")); // dummy value
     }
 
     protected visualize_expr() {
