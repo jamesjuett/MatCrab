@@ -297,3 +297,17 @@ svg.matlab-range-svg {
 .matcrab-exercise-complete {
     display: none;
 }
+
+.matcrab-layer-container {
+    margin-top: 15px;
+    margin-left: 15px;
+    transform: rotateX(-65deg) rotateY(-3deg) rotateZ(16deg);
+}
+
+.matcrab-layer-container > .matlab-table {
+    position: absolute;
+}
+
+.matcrab-layer-container > .matlab-table:first-child {
+    position: initial;
+}

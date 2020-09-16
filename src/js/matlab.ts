@@ -236,12 +236,34 @@ export class Matrix implements Visualizable {
 
     public visualize_html(options?: VisualizationOptions) : string {
 
+        if (this.layers === 1) {
+            return this.createLayerTable(1)[0].outerHTML;
+        }
+        else {
+            let layerContainter = $("<div class='matcrab-layer-container'></div>");
+            let topOffset = 0;
+            let leftOffset = 0;
+            for(let layer = 1; layer <= this.layers; ++layer) {
+                let layerTable = this.createLayerTable(layer);
+                layerContainter.append(layerTable);
+                layerTable.css("left", `${leftOffset}px`);
+                layerTable.css("top", `${topOffset}px`);
+                leftOffset -= 12;
+                topOffset -= 40;
+            }
+            return layerContainter[0].outerHTML;
+        }
+
+    }
+
+
+    private createLayerTable(layer: number) {
         let table = $("<table></table>");
         table.addClass("matlab-table");
 
         // Logical arrays are black/white
         if (this.dataType !== "logical") {
-            table.css("background-color", this.color);
+            table.css("background-color", this.color + "BB");
         }
         for (let r = 1; r <= this.rows; ++r) {
             let tr = $("<tr></tr>");
@@ -250,20 +272,18 @@ export class Matrix implements Visualizable {
                 let td = $("<td class='matlab-matrix-cell'></td>");
                 let temp = $("<div></div>");
                 temp.addClass("matlab-scalar");
-                if (this.dataType === "logical"){
-                    td.addClass(this.at(r,c) ? "logical-1" : "logical-0");
+                if (this.dataType === "logical") {
+                    td.addClass(this.at3D(r, c, layer) ? "logical-1" : "logical-0");
                 }
                 let tempSpan = $("<span></span>");
-                tempSpan.html(formatNumber(this.at(r,c)));
+                tempSpan.html(formatNumber(this.at(r, c)));
                 temp.append(tempSpan);
                 td.append(temp);
                 tr.append(td);
             }
         }
-
-        return table[0].outerHTML;
+        return table;
     }
-
 }
 
 
@@ -1797,7 +1817,7 @@ class MatrixExpression extends Expression {
             mats.some(m => m.dataType === "double") ? "double" : mats[0].dataType);
         
         for(let layer = 1; layer <= newLayers; ++layer) {
-            let rNew = 0;
+            let rNew = 1;
             for(let i = 0; i < mats.length; ++i) {
                 for(let r = 1; r <= mats[i].rows; ++r, ++rNew) {
                     for(let c = 1; c <= newCols; ++c) {
@@ -1872,10 +1892,10 @@ class RowExpression extends Expression {
             mats.some(m => m.dataType === "double") ? "double" : mats[0].dataType);
         
         for(let layer = 1; layer <= newLayers; ++layer) {
-            let cNew = 0;
+            let cNew = 1;
             for(let i = 0; i < mats.length; ++i) {
-                for(let c = 1; c <= newCols; ++c, ++cNew) {
-                    for(let r = 1; r <= mats[i].rows; ++r) {
+                for(let c = 1; c <= mats[i].cols; ++c, ++cNew) {
+                    for(let r = 1; r <= newRows; ++r) {
                         newMat.setAt3D(r, cNew, layer, mats[i].at3D(r, c, layer));
                     }
                 }
