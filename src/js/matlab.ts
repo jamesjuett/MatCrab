@@ -1167,8 +1167,8 @@ export class Environment {
     }
 
     private readonly elem? : JQuery;
-    private readonly vars : {[index:string] : Variable | undefined } = {};
-    private readonly functions : {[index:string] : MatlabFunction | undefined } = {};
+    private vars : {[index:string] : Variable | undefined } = {};
+    private functions : {[index:string] : MatlabFunction | undefined } = {};
     private readonly endValueStack : number[] = [];
 
     private readonly imshowFigure?: ImshowFigure;
@@ -1232,6 +1232,12 @@ export class Environment {
         this.listeners.forEach(l => l.onVariableSet(vari!));
     }
 
+    public varUpdated(name: string) {
+        let vari = this.vars[name];
+        assert(vari);
+        this.listeners.forEach(l => l.onVariableSet(vari!));
+    }
+
     public setFunction(name: string, func: MatlabFunction) {
         this.functions[name] = func;
     }
@@ -1254,6 +1260,12 @@ export class Environment {
 
     public addListener(listener: EnvironmentListener) {
         this.listeners.push(listener);
+    }
+
+    public clear() {
+        this.vars = {};
+        // this.functions = {}; // Don't do this. it kills the built in functions
+        this.elem?.empty();
     }
 }
 
@@ -1653,6 +1665,7 @@ class IndexedAssignment extends Expression {
             this.subarrayResult!.verify(vari.value);
             this.subarrayResult!.assign(vari.value, rhsResult.value);
             vari.refresh();
+            this.env.varUpdated(vari.name);
             (<Mutable<this>>this).updatedMatrix = vari.value.clone();
             return successResult(this.updatedMatrix!);
         }
