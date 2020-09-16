@@ -184,12 +184,12 @@ function renderExercises() {
         let exerciseWorkspace = new Environment($(this).find(".matcrab-workspace"));
         
         // Handle any initial setup code (e.g. to populate workspace vars)
-        $(this).find(".matcrab-setup").each(function() {
-            let src = trimWhitespace($(this).html());
-            let ast = matlab_parse(src);
-            let cc = CodeConstruct.create(ast, exerciseWorkspace);
-            cc.execute();
-        }).remove();
+        let setupSrc = trimWhitespace($(this).find(".matcrab-setup").html() || "");
+        let setupAst = matlab_parse(setupSrc);
+        if (!setupAst.statements || setupAst.statements.length > 0) {
+            CodeConstruct.create(setupAst, exerciseWorkspace).execute();
+        }
+        $(this).find(".matcrab-setup").remove();
 
         new ExerciseGroup(
             $(this).find(".matcrab-exercise-status"),
@@ -206,6 +206,18 @@ function renderExercises() {
 
         bindEntryToVisualization(entry, vis, exerciseWorkspace);
         bindRunButtonToVisualization(run, entry, vis, exerciseWorkspace);
+        
+        // Set up reset button
+        reset.on("click", (e) => {
+
+            // Clear envrionment and re-execute setup
+            exerciseWorkspace.clear()
+            if (!setupAst.statements || setupAst.statements.length > 0) {
+                CodeConstruct.create(setupAst, exerciseWorkspace).execute();
+            }
+
+        })
+
     }).data("rendered", true);
 
     // let backgroundWorkspace = new Environment();
