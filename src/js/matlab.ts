@@ -840,14 +840,14 @@ function createSizedMatrix(args: Matrix[]) {
         if (arg.isScalar) {
             // A scalar is acceptable and produces a square matrix
             let size = arg.scalarValue();
-            return new Matrix(size, size, new Array(size*size), "double");
+            return new Matrix(size, size, new Array(size*size), "double").fill(0);
         }
         else {
             // Otherwise, must be a row vector with real values
             if (arg.rows !== 1) {
                 throw "The one-argument version of this function requires a numeric row vector as an input."
             }
-            return new Matrix(arg.atLinear(1), arg.atLinear(2), new Array(arg.atLinear(1) * arg.atLinear(2)), "double");
+            return new Matrix(arg.atLinear(1), arg.atLinear(2), new Array(arg.atLinear(1) * arg.atLinear(2)), "double").fill(0);
         }
     }
     else if ( args.length === 2) {
@@ -859,7 +859,7 @@ function createSizedMatrix(args: Matrix[]) {
         if (!numCols.isScalar) {
             throw "The argument for the number of columns must be a scalar.";
         }
-        return new Matrix(numRows.scalarValue(), numCols.scalarValue(), new Array(numRows.scalarValue() * numCols.scalarValue()), "double");
+        return new Matrix(numRows.scalarValue(), numCols.scalarValue(), new Array(numRows.scalarValue() * numCols.scalarValue()).fill(0), "double");
     }
     else {
         throw "Sorry, MatCrab does not support matrices with more than two dimensions.";
@@ -980,6 +980,48 @@ const MATLAB_FUNCTIONS : {[index: string]: MatlabFunction} = {
             mat.setAt(i, i, 1);
         }
         return mat;
+    }),
+    "randi" : new MatlabFunction([0,MatlabFunction.ARGS_INF], (args: Matrix[]) => {
+        let rangeMat = args[0];
+        let min = 1; // default min of 1 unless specified
+        let max: number;
+
+        if (!rangeMat.data.every(v => Number.isInteger(v))) {
+            throw "The first argument to randi must specify integral value(s)."
+        }
+
+        if (rangeMat.numel === 1) {
+            max = rangeMat.scalarValue();
+        }
+        else if (rangeMat.numel === 2) {
+            min = rangeMat.atLinear(1);
+            max = rangeMat.atLinear(2);
+            if (min > max) {
+                throw "The specified lower bound for randi must be <= the specified upper bound."
+            }
+        }
+        else {
+            throw "The first argument to randi may only be either a scalar or a two-element vector."
+        }
+        
+        args.shift(); // remove range argument, leaving only dimensions
+
+        let mat = createSizedMatrix(args);
+        mat.operateAll(() => MatlabMath.randomIntegerInclusive(min, max));
+        return mat;
+    }),
+    "linspace" : new MatlabFunction([2,3], (args: Matrix[]) => {
+
+        // linspace defaults to 100 elements in the range if no amount is provided
+        let numel = args.length === 3 ? args[2].scalarValue() : 100;
+
+        let start = args[0].scalarValue();
+        let end = args[1].scalarValue();
+
+        let stepSize = (end-start) / (numel - 1);
+
+        let data = range(start, end + stepSize, stepSize);
+        return new Matrix(1, numel, data, "double");
     }),
     "magic" : new MatlabFunction(1, (args: Matrix[]) => {
         let mat = createSizedMatrix(args);
