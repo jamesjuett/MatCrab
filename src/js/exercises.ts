@@ -153,7 +153,6 @@ function trimWhitespace(src: string) {
 } 
 
 function renderExercises() {
-
     $(".matcrab-variable-target-exercise").filter(function() {
         return !$(this).data("rendered");
     }).each(function() {

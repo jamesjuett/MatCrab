@@ -68,8 +68,9 @@
 }
 
 .matlab-column-index {
-    text-align-last: center;
+    text-align: center;
     font-size: 0.8em;
+    border: none;
 }
 
 .matlab-column-index.selected {
@@ -80,6 +81,7 @@
 .matlab-row-index {
     font-size: 0.8em;
     padding-right: 0.3em;
+    border: none;
 }
 
 .matlab-row-index.selected {
@@ -243,6 +245,10 @@ svg.matlab-range-svg {
     left: 0;
     right: 0;
     font-family: monospace;
+}
+
+.matcrab-hide-indexing-text .matlab-indexing-text {
+    display: none;
 }
 
 #visualization {

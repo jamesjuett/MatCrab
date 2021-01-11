@@ -558,7 +558,7 @@ class RegularLinearSubarray extends LinearSubarray {
         }
         else if (this.selectedIndices.numel == value.numel) {
             this.selectedIndices.data.forEach((index, valueIndex) => {
-                target.setLinear(index, value.atLinear(valueIndex));
+                target.setLinear(index, value.atLinear(valueIndex+1));
             })
         }
         else{
@@ -1653,9 +1653,9 @@ class IndexedAssignment extends Expression {
             <div>
                 <div class="matlab-exp-index">
                     ${valueHtml}
-                    <div class="matlab-identifier-name">
-                        ${this.subarrayResult ? this.targetName + this.subarrayResult.indexingText() : this.targetName}
-                    </div>
+                    ${this.subarrayResult ?
+                        `<div class="matlab-identifier-name">${this.targetName}<span class="matlab-indexing-text">${this.subarrayResult.indexingText()}</span></div>` :
+                        `<div class="matlab-identifier-name">${this.targetName}</div>`}
                 </div>
                 
             </div>
@@ -2318,9 +2318,9 @@ class IndexOrCallExpression extends Expression {
             valueHtml = this.subarrayResult.visualize_selection(this.originalMatrix);
             return `<div class="matlab-exp-index">
                 ${valueHtml}
-                <div class="matlab-identifier-name">
-                ${this.subarrayResult ? this.targetName + this.subarrayResult.indexingText() : this.targetName}
-                </div>
+                ${this.subarrayResult ?
+                    `<div class="matlab-identifier-name">${this.targetName}<span class="matlab-indexing-text">${this.subarrayResult.indexingText()}</span></div>` :
+                    `<div class="matlab-identifier-name">${this.targetName}</div>`}
             </div>`
             
         }
